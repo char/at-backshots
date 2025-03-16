@@ -21,7 +21,7 @@ use crate::{
 
 pub async fn ingest(app: &AppState, domain: &str, port: u16, tls: bool) -> Result<()> {
     let cursor_path = format!("firehose_cursor/{domain}:{port}");
-    let _ = app.db.remove(&cursor_path)?;
+    // let _ = app.db.remove(&cursor_path)?;
 
     'reconnect: loop {
         let last_cursor = app.db.get(&cursor_path)?.map(|v| {
