@@ -7,8 +7,8 @@ use crate::AppState;
 // this is just an index into the collections table
 pub type RecordCollection = u64;
 
-// if 16th byte is \0, this is a nul-terminated string
-// otherwise, this is a 128 bit index into the rkeys table
+// if 16th byte is 0, this is a nul-terminated string
+// otherwise, this is a 120 bit index into the rkeys table
 pub type RecordKey = [u8; 16];
 
 #[derive(Debug, Clone, Copy)]
