@@ -38,7 +38,7 @@ impl AppState {
             .cache_capacity(1024 * 1024 * 1024)
             .mode(sled::Mode::LowSpace)
             .use_compression(true)
-            .compression_factor(12)
+            .compression_factor(8)
             .open()?;
 
         let db_records = db.open_tree(b"records")?;
