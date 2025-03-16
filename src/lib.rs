@@ -22,19 +22,30 @@ pub struct AppState {
 
     pub db: sled::Db,
     pub db_records: sled::Tree,
-    pub db_dids: sled::Tree,
-    pub db_dids_reverse: sled::Tree,
+
     pub db_rkeys: sled::Tree,
     pub db_collections: sled::Tree,
     pub db_collections_reverse: sled::Tree,
+
+    pub did_db: sled::Db,
+    pub db_dids: sled::Tree,
+    pub db_dids_reverse: sled::Tree,
 }
 impl AppState {
-    pub fn new(zplc_server: String, db: sled::Db) -> Result<Self> {
+    pub fn new(zplc_server: String) -> Result<Self> {
+        let db = sled::Config::default()
+            .path("./data")
+            .cache_capacity(1024 * 1024 * 1024)
+            .mode(sled::Mode::LowSpace)
+            .open()?;
+
         let db_records = db.open_tree(b"records")?;
         db_records.set_merge_operator(concatenate_merge);
 
-        let db_dids = db.open_tree(b"dids")?;
-        let db_dids_reverse = db.open_tree(b"dids_r")?;
+        let did_db = sled::open("./data-did")?;
+        let db_dids = did_db.open_tree(b"dids")?;
+        let db_dids_reverse = did_db.open_tree(b"dids_r")?;
+
         let db_rkeys = db.open_tree(b"rkeys")?;
         let db_collections = db.open_tree(b"coll")?;
         let db_collections_reverse = db.open_tree(b"coll_r")?;
@@ -44,11 +55,14 @@ impl AppState {
 
             db,
             db_records,
-            db_dids,
-            db_dids_reverse,
+
             db_rkeys,
             db_collections,
             db_collections_reverse,
+
+            did_db,
+            db_dids,
+            db_dids_reverse,
         })
     }
 }

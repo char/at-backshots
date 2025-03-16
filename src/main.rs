@@ -11,13 +11,7 @@ pub async fn main() -> Result<()> {
         .init();
 
     let addr: SocketAddr = "127.0.0.1:3000".parse()?;
-
-    let db = sled::Config::default()
-        .path("./data")
-        .cache_capacity(1024 * 1024 * 1024)
-        .mode(sled::Mode::LowSpace)
-        .open()?;
-    let app = Arc::new(AppState::new("https://zplc.cerulea.blue".into(), db)?);
+    let app = Arc::new(AppState::new("https://zplc.cerulea.blue".into())?);
 
     {
         let app = Arc::clone(&app);
