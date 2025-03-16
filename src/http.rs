@@ -4,6 +4,7 @@ use anyhow::Result;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
     body::{Bytes, Incoming},
+    header,
     server::conn::http1,
     Method, Request, Response, StatusCode,
 };
@@ -20,18 +21,33 @@ pub fn body_full<T: Into<Bytes>>(chunk: T) -> Body {
     Full::new(chunk.into()).map_err(|e| match e {}).boxed()
 }
 
-async fn serve(_app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Body>> {
+async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Body>> {
     let path = req.uri().path();
 
     match (req.method(), path) {
         (&Method::GET, "/") => Ok(Response::builder()
             .status(StatusCode::OK)
-            .header("Content-Type", "text/plain")
+            .header(header::CONTENT_TYPE, "text/plain")
             .body(body_full("backshots running..."))?),
+
+        (&Method::GET, "/xrpc/_status") => Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "text/plain")
+            .body(body_full(format!(
+                r#"status:
+collections: {}
+records: {}
+rkeys: {}
+dids: {}"#,
+                app.db_collections.len(),
+                app.db_records.len(),
+                app.db_rkeys.len(),
+                app.db_dids.len(),
+            )))?),
 
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
-            .header("Content-Type", "text/plain")
+            .header(header::CONTENT_TYPE, "text/plain")
             .body(body_full("Not Found"))?),
     }
 }
