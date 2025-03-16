@@ -192,6 +192,12 @@ async fn handle_backlinks(
         rkey: app.encode_rkey(rkey)?,
     };
 
+    let source_display = source.to_string(app).await?;
+    let source_bytes = unsafe {
+        let ptr = &raw const source as *const u8;
+        std::slice::from_raw_parts(ptr, std::mem::size_of::<RecordId>())
+    };
+
     let mut targets = Vec::<RecordId>::with_capacity(backlinks.len());
     for (_cid, uri) in backlinks {
         let (repo, collection, rkey) = match parse_at_uri(uri) {
@@ -217,27 +223,18 @@ async fn handle_backlinks(
         }
 
         match create_record_id(app, repo, collection, rkey).await {
-            Ok(rid) => targets.push(rid),
+            Ok(target) => {
+                let target_display = target.to_string(app).await?;
+                tracing::debug!("{} -> {}", &source_display, target_display);
+
+                let target_bytes = unsafe {
+                    let ptr = &raw const target as *const u8;
+                    std::slice::from_raw_parts(ptr, std::mem::size_of::<RecordId>())
+                };
+                app.db_records.merge(target_bytes, source_bytes)?;
+            }
             Err(e) => tracing::warn!("failed to create RecordId: {:?}", e),
         };
-    }
-
-    let source_bytes = unsafe {
-        let ptr = &raw const source as *const u8;
-        std::slice::from_raw_parts(ptr, std::mem::size_of::<RecordId>())
-    };
-    let targets_bytes = unsafe {
-        std::slice::from_raw_parts(
-            targets.as_ptr() as *const u8,
-            targets.len() * std::mem::size_of::<RecordId>(),
-        )
-    };
-    app.db_records.merge(source_bytes, targets_bytes)?;
-
-    let source_display = source.to_string(app).await?;
-    for target in targets.iter() {
-        let target_display = target.to_string(app).await?;
-        tracing::debug!("{} -> {}", source_display, target_display);
     }
 
     Ok(())
