@@ -1,0 +1,3 @@
+[submodule "vendor/atrium"]
+	path = vendor/atrium
+	url = https://github.com/sugyan/atrium.git
