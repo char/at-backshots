@@ -17,7 +17,7 @@ multibase = "0.9.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_bytes = "0.11.17"
 serde_ipld_dagcbor = "0.6.2"
-sled = "0.34.7"
+sled = { version = "0.34.7", features = ["compression", "io_uring"] }
 tokio = { version = "1.44.1", features = ["full"] }
 tokio-rustls = "0.26.2"
 tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-webpki-roots"] }
