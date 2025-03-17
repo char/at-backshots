@@ -198,7 +198,6 @@ async fn handle_backlinks(
         std::slice::from_raw_parts(ptr, std::mem::size_of::<RecordId>())
     };
 
-    let mut targets = Vec::<RecordId>::with_capacity(backlinks.len());
     for (_cid, uri) in backlinks {
         let (repo, collection, rkey) = match parse_at_uri(uri) {
             Ok(x) => x,

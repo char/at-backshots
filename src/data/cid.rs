@@ -15,7 +15,7 @@ pub struct CidV1<const HASH_SIZE: usize> {
 pub type CidV1Sha256 = CidV1<32>;
 
 pub fn cidv1_meta(version: u8, codec: u8, hash_type: u8) -> u32 {
-    version as u32 | (codec as u32) << 8 | (hash_type as u32) << 16
+    version as u32 | ((codec as u32) << 8) | ((hash_type as u32) << 16)
 }
 
 impl FromStr for CidV1Sha256 {
