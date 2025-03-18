@@ -5,10 +5,9 @@ pub mod mst;
 
 pub mod data;
 pub mod http;
-pub mod http_client;
 pub mod ingest;
 pub mod lexicons;
-pub mod tls;
+pub mod web;
 pub mod zplc_client;
 
 fn concatenate_merge(

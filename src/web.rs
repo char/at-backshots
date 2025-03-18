@@ -1,25 +1,14 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
-use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
-use hyper::{
-    body::{Bytes, Incoming},
-    header,
-    server::conn::http1,
-    Method, Request, Response, StatusCode,
-};
+use hyper::{body::Incoming, header, server::conn::http1, Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
-use crate::AppState;
-
-pub type Body = BoxBody<Bytes, hyper::Error>;
-pub fn body_empty() -> Body {
-    Empty::<Bytes>::new().map_err(|e| match e {}).boxed()
-}
-pub fn body_full<T: Into<Bytes>>(chunk: T) -> Body {
-    Full::new(chunk.into()).map_err(|e| match e {}).boxed()
-}
+use crate::{
+    http::{body_full, Body},
+    AppState,
+};
 
 async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Body>> {
     let path = req.uri().path();

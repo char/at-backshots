@@ -2,7 +2,7 @@ use anyhow::Result;
 use http_body_util::BodyExt;
 use hyper::{Request, StatusCode};
 
-use crate::{http::body_empty, http_client::fetch, AppState};
+use crate::{http::body_empty, http::client::fetch, AppState};
 
 // TODO: i need to write the zplc server before we can use this. lol
 

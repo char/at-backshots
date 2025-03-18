@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
-use backshots::{http::listen, ingest::firehose::ingest_firehose, AppState};
+use backshots::{ingest::firehose::ingest_firehose, web::listen, AppState};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
