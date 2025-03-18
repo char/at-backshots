@@ -31,18 +31,18 @@ impl RecordId {
 
 impl AppState {
     pub fn resolve_rkey<'a>(&self, rkey: &'a RecordKey) -> Result<Cow<'a, str>> {
-        if rkey[15] == 0 {
-            let s = std::str::from_utf8(rkey).context("rkey: failed to decode inline utf-8")?;
-            return Ok(Cow::Borrowed(s));
+        if rkey[0] == 0 {
+            let rkey = self
+                .db_rkeys
+                .get(rkey)?
+                .context("could not find rkey in rkeys tree")?;
+            let rkey =
+                String::from_utf8(rkey.to_vec()).context("rkey: failed to decode stored utf-8")?;
+            return Ok(Cow::Owned(rkey));
         }
 
-        let rkey = self
-            .db_rkeys
-            .get(rkey)?
-            .context("could not find rkey in rkeys tree")?;
-        let rkey =
-            String::from_utf8(rkey.to_vec()).context("rkey: failed to decode stored utf-8")?;
-        Ok(Cow::Owned(rkey))
+        let s = std::str::from_utf8(rkey).context("rkey: failed to decode inline utf-8")?;
+        Ok(Cow::Borrowed(s))
     }
 
     pub fn encode_rkey(&self, rkey: &str) -> Result<RecordKey> {
@@ -61,18 +61,16 @@ impl AppState {
                     let mut bytes = [0u8; 16];
                     bytes.copy_from_slice(&counter[0..16]);
                     bytes[15] = 0;
-                    u128::from_le_bytes(bytes) + 1
+                    u128::from_be_bytes(bytes) + 1
                 } else {
                     0
                 };
 
-                let mut bytes = counter.to_le_bytes();
+                let bytes = counter.to_be_bytes();
                 assert_eq!(
-                    bytes[15], 0,
+                    bytes[0], 0,
                     "precondition: there should not be more than 2^120 rkeys"
                 );
-                // flag final byte as non-zero so we can distinguish between inline and fk
-                bytes[15] = 0xFF;
                 tx.insert(&[], &bytes)?;
                 Ok(bytes)
             });
@@ -83,7 +81,7 @@ impl AppState {
     pub fn resolve_collection(&self, coll: RecordCollection) -> Result<String> {
         let collection = self
             .db_collections
-            .get(coll.to_le_bytes())?
+            .get(coll.to_be_bytes())?
             .context("could not find collection id in colls tree")?;
 
         let collection =
@@ -96,7 +94,7 @@ impl AppState {
         if let Some(collection) = self.db_collections_reverse.get(collection)? {
             let mut bytes = [0u8; 8];
             bytes.copy_from_slice(&collection[0..8]);
-            return Ok(u64::from_le_bytes(bytes));
+            return Ok(u64::from_be_bytes(bytes));
         }
 
         let counter: Result<_, sled::transaction::TransactionError> =
@@ -104,20 +102,20 @@ impl AppState {
                 let counter = if let Some(counter) = tx.get([])? {
                     let mut bytes = [0u8; 8];
                     bytes.copy_from_slice(&counter[0..8]);
-                    u64::from_le_bytes(bytes) + 1
+                    u64::from_be_bytes(bytes) + 1
                 } else {
                     0
                 };
 
-                tx.insert(&[], &counter.to_le_bytes())?;
+                tx.insert(&[], &counter.to_be_bytes())?;
                 Ok(counter)
             });
 
         let counter = counter?;
         self.db_collections
-            .insert(counter.to_le_bytes(), collection)?;
+            .insert(counter.to_be_bytes(), collection)?;
         self.db_collections_reverse
-            .insert(collection, &counter.to_le_bytes())?;
+            .insert(collection, &counter.to_be_bytes())?;
         Ok(counter)
     }
 }

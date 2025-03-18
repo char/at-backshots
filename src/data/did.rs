@@ -15,7 +15,7 @@ impl AppState {
 
         let did = self
             .db_dids
-            .get(did.to_le_bytes())?
+            .get(did.to_be_bytes())?
             .context(format!("DID {} was not found in dids tree", did))?;
         Ok(String::from_utf8(did.to_vec())?)
     }
@@ -28,7 +28,7 @@ impl AppState {
         if let Some(did) = self.db_dids_reverse.get(did)? {
             let mut bytes = [0u8; 8];
             bytes.copy_from_slice(&did[0..8]);
-            let did = u64::from_le_bytes(bytes);
+            let did = u64::from_be_bytes(bytes);
             return Ok(did);
         }
 
@@ -37,17 +37,17 @@ impl AppState {
                 let counter = if let Some(counter) = tx.get([])? {
                     let mut bytes = [0u8; 8];
                     bytes.copy_from_slice(&counter[0..8]);
-                    u64::from_le_bytes(bytes) + 1
+                    u64::from_be_bytes(bytes) + 1
                 } else {
                     DID_FLAG_NON_STANDARD
                 };
-                tx.insert(&[], &counter.to_le_bytes())?;
+                tx.insert(&[], &counter.to_be_bytes())?;
                 Ok(counter)
             });
 
         let counter = counter?;
-        self.db_dids.insert(counter.to_le_bytes(), did)?;
-        self.db_dids_reverse.insert(did, &counter.to_le_bytes())?;
+        self.db_dids.insert(counter.to_be_bytes(), did)?;
+        self.db_dids_reverse.insert(did, &counter.to_be_bytes())?;
         Ok(counter)
     }
 }
