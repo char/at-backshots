@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::borrow::Cow;
+use zerocopy::{BigEndian, FromBytes, IntoBytes, U64};
 
-use super::did::Did;
 use crate::AppState;
 
 // this is just an index into the collections table
@@ -11,12 +11,12 @@ pub type RecordCollection = u64;
 // otherwise, this is a 120 bit index into the rkeys table
 pub type RecordKey = [u8; 16];
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, IntoBytes, FromBytes)]
 #[repr(C, packed)]
 pub struct RecordId {
     pub rkey: [u8; 16],
-    pub collection: u64,
-    pub did: Did,
+    pub collection: U64<BigEndian>,
+    pub did: U64<BigEndian>,
     // pub cid: CidV1Sha256,
 }
 

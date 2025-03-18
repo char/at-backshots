@@ -91,6 +91,7 @@ dependencies = [
  "tracing-subscriber",
  "unsigned-varint",
  "webpki-roots",
+ "zerocopy",
 ]
 
 [[package]]

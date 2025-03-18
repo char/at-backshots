@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::collections::HashSet;
+use zerocopy::IntoBytes;
 
 use crate::{
     data::{at_uri::parse_at_uri, record::RecordId},
@@ -17,17 +18,14 @@ pub async fn handle_backlinks(
         return Ok(());
     }
 
-    let source = RecordId {
-        did: app.encode_did(repo).await?,
-        collection: app.encode_collection(collection)?,
+    let mut source = RecordId {
+        did: app.encode_did(repo).await?.into(),
+        collection: app.encode_collection(collection)?.into(),
         rkey: app.encode_rkey(rkey)?,
     };
 
     let source_display = format!("at://{repo}/{collection}/{rkey}");
-    let source_bytes = unsafe {
-        let ptr = &raw const source as *const u8;
-        std::slice::from_raw_parts(ptr, std::mem::size_of::<RecordId>())
-    };
+    let source_bytes = source.as_mut_bytes();
 
     for (_cid, uri) in backlinks {
         let (target_repo, target_collection, target_rkey) = match parse_at_uri(uri) {
@@ -46,21 +44,18 @@ pub async fn handle_backlinks(
             rkey: &str,
         ) -> Result<RecordId> {
             Ok(RecordId {
-                did: app.encode_did(repo).await?,
-                collection: app.encode_collection(collection)?,
+                did: app.encode_did(repo).await?.into(),
+                collection: app.encode_collection(collection)?.into(),
                 rkey: app.encode_rkey(rkey)?,
             })
         }
 
         match create_record_id(app, target_repo, target_collection, target_rkey).await {
-            Ok(target) => {
+            Ok(mut target) => {
                 tracing::debug!(from = source_display, to = uri, "backlink");
 
-                let target_bytes = unsafe {
-                    let ptr = &raw const target as *const u8;
-                    std::slice::from_raw_parts(ptr, std::mem::size_of::<RecordId>())
-                };
-                app.db_records.merge(target_bytes, source_bytes)?;
+                let target_bytes = target.as_mut_bytes();
+                app.db_records.merge(&target_bytes, &source_bytes)?;
             }
             Err(e) => tracing::warn!("failed to create RecordId: {:?}", e),
         };

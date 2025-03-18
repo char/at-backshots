@@ -24,6 +24,7 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 unsigned-varint = "0.8.0"
 webpki-roots = "0.26.8"
+zerocopy = { version = "0.8.23", features = ["derive", "std"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "io_uring"] }
