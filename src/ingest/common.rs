@@ -23,14 +23,14 @@ pub async fn handle_backlinks(
         rkey: app.encode_rkey(rkey)?,
     };
 
-    let source_display = source.to_string(app).await?;
+    let source_display = format!("at://{repo}/{collection}/{rkey}");
     let source_bytes = unsafe {
         let ptr = &raw const source as *const u8;
         std::slice::from_raw_parts(ptr, std::mem::size_of::<RecordId>())
     };
 
     for (_cid, uri) in backlinks {
-        let (repo, collection, rkey) = match parse_at_uri(uri) {
+        let (target_repo, target_collection, target_rkey) = match parse_at_uri(uri) {
             Ok(x) => x,
             Err(e) => {
                 tracing::warn!("failed to parse at uri {uri}: {:?}", e);
@@ -52,10 +52,9 @@ pub async fn handle_backlinks(
             })
         }
 
-        match create_record_id(app, repo, collection, rkey).await {
+        match create_record_id(app, target_repo, target_collection, target_rkey).await {
             Ok(target) => {
-                let target_display = target.to_string(app).await?;
-                tracing::debug!("{} -> {}", &source_display, target_display);
+                tracing::debug!(from = source_display, to = uri, "backlink");
 
                 let target_bytes = unsafe {
                     let ptr = &raw const target as *const u8;

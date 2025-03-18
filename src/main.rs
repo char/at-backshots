@@ -7,7 +7,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 #[tokio::main]
 pub async fn main() -> Result<()> {
     tracing_subscriber::registry()
-        .with(fmt::layer())
+        .with(fmt::layer().compact())
         .with("backshots=debug".parse::<EnvFilter>().unwrap())
         .init();
 

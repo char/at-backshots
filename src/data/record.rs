@@ -20,15 +20,6 @@ pub struct RecordId {
     // pub cid: CidV1Sha256,
 }
 
-impl RecordId {
-    pub async fn to_string(&self, app: &AppState) -> Result<String> {
-        let did = app.resolve_did(self.did).await?;
-        let coll = app.resolve_collection(self.collection)?;
-        let rkey = app.resolve_rkey(&self.rkey)?;
-        Ok(format!("at://{did}/{coll}/{rkey}"))
-    }
-}
-
 impl AppState {
     pub fn resolve_rkey<'a>(&self, rkey: &'a RecordKey) -> Result<Cow<'a, str>> {
         if rkey[0] == 0 {
