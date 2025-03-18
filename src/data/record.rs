@@ -39,7 +39,7 @@ impl AppState {
         let rkey = self
             .db_rkeys
             .get(rkey)?
-            .ok_or_else(|| anyhow::anyhow!("could not find rkey in rkeys tree"))?;
+            .context("could not find rkey in rkeys tree")?;
         let rkey =
             String::from_utf8(rkey.to_vec()).context("rkey: failed to decode stored utf-8")?;
         Ok(Cow::Owned(rkey))
@@ -84,7 +84,7 @@ impl AppState {
         let collection = self
             .db_collections
             .get(coll.to_le_bytes())?
-            .ok_or_else(|| anyhow::anyhow!("could not find collection id in colls tree"))?;
+            .context("could not find collection id in colls tree")?;
 
         let collection =
             String::from_utf8(collection.to_vec()).context("collection: failed to decode utf-8")?;

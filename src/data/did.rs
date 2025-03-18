@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::AppState;
 
@@ -16,7 +16,7 @@ impl AppState {
         let did = self
             .db_dids
             .get(did.to_le_bytes())?
-            .ok_or_else(|| anyhow::anyhow!("DID {} was not found in dids tree", did))?;
+            .context(format!("DID {} was not found in dids tree", did))?;
         Ok(String::from_utf8(did.to_vec())?)
     }
 

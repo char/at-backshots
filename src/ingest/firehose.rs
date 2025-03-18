@@ -3,23 +3,19 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use hyper::header::HeaderValue;
 use ipld_core::{cid::Cid, ipld::Ipld};
-use iroh_car::CarReader;
 use serde_ipld_dagcbor::DecodeError;
-use std::{
-    collections::{HashMap, HashSet},
-    io::Cursor,
-    time::Duration,
-};
-use tokio::io::AsyncRead;
+use std::{collections::BTreeMap, io::Cursor, time::Duration};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use crate::{
-    data::{at_uri::parse_at_uri, record::RecordId},
+    car::read_car_v1,
     lexicons::{StreamEventHeader, SubscribeReposCommit, SubscribeReposInfo},
     AppState,
 };
 
-pub async fn ingest(app: &AppState, domain: &str, port: u16, tls: bool) -> Result<()> {
+use super::carslice::handle_carslice;
+
+pub async fn ingest_firehose(app: &AppState, domain: &str, port: u16, tls: bool) -> Result<()> {
     let cursor_path = format!("firehose_cursor/{domain}:{port}");
     // let _ = app.db.remove(&cursor_path)?;
 
@@ -93,9 +89,10 @@ async fn handle_event(app: &AppState, event: Bytes) -> Result<()> {
             app.db.insert(b"firehose_cursor", &new_cursor)?;
 
             let mut cursor = Cursor::new(commit.blocks);
-            let reader = CarReader::new(&mut cursor).await?;
+            let reader = &mut cursor;
+            let car_file = read_car_v1(reader).await?;
 
-            let mut records = HashMap::<Cid, String>::new();
+            let mut records = BTreeMap::<Cid, String>::new();
             for op in commit.operations {
                 match op.action.as_str() {
                     "create" | "update" => {
@@ -111,7 +108,7 @@ async fn handle_event(app: &AppState, event: Bytes) -> Result<()> {
                 }
             }
 
-            if let Err(e) = handle_carslice(app, commit.repo, reader, records).await {
+            if let Err(e) = handle_carslice(app, commit.repo, reader, &car_file, &records).await {
                 tracing::error!("{:?}", e);
             };
         }
@@ -122,118 +119,6 @@ async fn handle_event(app: &AppState, event: Bytes) -> Result<()> {
             }
         }
         _ => {}
-    }
-
-    Ok(())
-}
-
-pub async fn handle_carslice<R: AsyncRead + Unpin>(
-    app: &AppState,
-    repo: String,
-    mut car_reader: CarReader<R>,
-    mut records: HashMap<Cid, String>,
-) -> Result<()> {
-    while let Some((cid, cbor)) = car_reader.next_block().await? {
-        let Some(path) = records.remove(&cid) else {
-            continue;
-        };
-        let Some((collection, rkey)) = path.split_once('/') else {
-            continue;
-        };
-        let ipld = serde_ipld_dagcbor::from_slice::<Ipld>(&cbor)?;
-        // dbg!(&repo, &collection, &rkey, &ipld);
-
-        let mut backlinks = HashSet::<(&str, &str)>::new();
-
-        for child in ipld.iter() {
-            // a StrongRef is an Ipld::Map with "cid" and "uri"
-            let Ipld::Map(map) = child else {
-                continue;
-            };
-            if let (Some(Ipld::String(cid)), Some(Ipld::String(uri))) =
-                (map.get("cid"), map.get("uri"))
-            {
-                backlinks.insert((cid, uri));
-            }
-        }
-
-        handle_backlinks(app, &repo, collection, rkey, backlinks).await?;
-    }
-
-    if !records.is_empty() {
-        tracing::warn!(
-            "got leftover records while handling event: {:?}",
-            records
-                .keys()
-                .map(|c| c
-                    .to_string_of_base(multibase::Base::Base32Lower)
-                    .unwrap_or_else(|_| "<error>".into()))
-                .collect::<Vec<_>>()
-        )
-    }
-
-    Ok(())
-}
-
-async fn handle_backlinks(
-    app: &AppState,
-    repo: &str,
-    collection: &str,
-    rkey: &str,
-    backlinks: HashSet<(/* cid */ &str, /* uri */ &str)>,
-) -> Result<()> {
-    if backlinks.is_empty() {
-        return Ok(());
-    }
-
-    let source = RecordId {
-        did: app.encode_did(repo).await?,
-        collection: app.encode_collection(collection)?,
-        rkey: app.encode_rkey(rkey)?,
-    };
-
-    let source_display = source.to_string(app).await?;
-    let source_bytes = unsafe {
-        let ptr = &raw const source as *const u8;
-        std::slice::from_raw_parts(ptr, std::mem::size_of::<RecordId>())
-    };
-
-    for (_cid, uri) in backlinks {
-        let (repo, collection, rkey) = match parse_at_uri(uri) {
-            Ok(x) => x,
-            Err(e) => {
-                tracing::warn!("failed to parse at uri {uri}: {:?}", e);
-                continue;
-            }
-        };
-
-        // my kingdom for a try block
-        async fn create_record_id(
-            app: &AppState,
-            repo: &str,
-            collection: &str,
-            rkey: &str,
-        ) -> Result<RecordId> {
-            Ok(RecordId {
-                did: app.encode_did(repo).await?,
-                collection: app.encode_collection(collection)?,
-                rkey: app.encode_rkey(rkey)?,
-            })
-        }
-
-        match create_record_id(app, repo, collection, rkey).await {
-            Ok(target) => {
-                let target_display = target.to_string(app).await?;
-                tracing::debug!("{} -> {}", &source_display, target_display);
-
-                let target_bytes = unsafe {
-                    let ptr = &raw const target as *const u8;
-                    std::slice::from_raw_parts(ptr, std::mem::size_of::<RecordId>())
-                };
-                app.db_records.merge(target_bytes, source_bytes)?;
-            }
-            Err(e) => tracing::warn!("failed to create RecordId: {:?}", e),
-        };
     }
 
     Ok(())
