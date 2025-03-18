@@ -5,6 +5,7 @@ pub mod mst;
 
 pub mod data;
 pub mod http;
+pub mod http_client;
 pub mod ingest;
 pub mod lexicons;
 pub mod tls;
