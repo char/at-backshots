@@ -56,6 +56,7 @@ pub async fn handle_backlinks(
 
                 let target_bytes = target.as_mut_bytes();
                 app.db_records.merge(&target_bytes, &source_bytes)?;
+                app.incr_backlink_count(1)?;
             }
             Err(e) => tracing::warn!("failed to create RecordId: {:?}", e),
         };

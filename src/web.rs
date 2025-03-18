@@ -25,10 +25,11 @@ async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Bo
             .body(body_full(format!(
                 r#"status:
 collections: {}
-records: {}
+backlinks: {} (targets: {})
 rkeys: {}
 dids: {}"#,
                 app.db_collections.len(),
+                app.fetch_backlink_count()?,
                 app.db_records.len(),
                 app.db_rkeys.len(),
                 app.db_dids.len(),
