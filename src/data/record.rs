@@ -14,9 +14,9 @@ pub type RecordKey = [u8; 16];
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct RecordId {
-    pub did: Did,
-    pub collection: u64,
     pub rkey: [u8; 16],
+    pub collection: u64,
+    pub did: Did,
     // pub cid: CidV1Sha256,
 }
 
