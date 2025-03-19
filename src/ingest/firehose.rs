@@ -62,7 +62,7 @@ pub async fn ingest_firehose(app: &AppState, domain: &str, port: u16, tls: bool)
                     break 'reconnect;
                 }
                 None => {
-                    break 'reconnect;
+                    continue 'reconnect;
                 }
             }
         }
