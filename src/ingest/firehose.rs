@@ -58,10 +58,11 @@ pub async fn ingest_firehose(app: &AppState, domain: &str, port: u16, tls: bool)
                     tracing::warn!("unexpected frame type {:?}", msg);
                 }
                 Some(Err(e)) => {
-                    tracing::error!("{e:?}");
+                    tracing::error!("got error from websocket stream: {e:?}");
                     break 'reconnect;
                 }
                 None => {
+                    tracing::info!("got no response from websocket stream, reconnecting");
                     continue 'reconnect;
                 }
             }
