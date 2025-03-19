@@ -10,12 +10,19 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use crate::{
     car::read_car_v1,
     lexicons::{StreamEventHeader, SubscribeReposCommit, SubscribeReposInfo},
+    storage::BacklinkStorage,
     AppState,
 };
 
 use super::carslice::handle_carslice;
 
-pub async fn ingest_firehose(app: &AppState, domain: &str, port: u16, tls: bool) -> Result<()> {
+pub async fn ingest_firehose(
+    app: &AppState,
+    mut storage: BacklinkStorage,
+    domain: &str,
+    port: u16,
+    tls: bool,
+) -> Result<()> {
     let cursor_path = format!("firehose_cursor/{domain}:{port}");
     // let _ = app.db.remove(&cursor_path)?;
 
@@ -47,7 +54,7 @@ pub async fn ingest_firehose(app: &AppState, domain: &str, port: u16, tls: bool)
         loop {
             match ws.next().await {
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(bytes))) => {
-                    handle_event(app, bytes).await?;
+                    handle_event(app, &mut storage, bytes).await?;
                 }
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_close_frame))) => {
                     tracing::warn!("got close frame. reconnecting in 10s");
@@ -72,7 +79,7 @@ pub async fn ingest_firehose(app: &AppState, domain: &str, port: u16, tls: bool)
     Ok(())
 }
 
-async fn handle_event(app: &AppState, event: Bytes) -> Result<()> {
+async fn handle_event(app: &AppState, storage: &mut BacklinkStorage, event: Bytes) -> Result<()> {
     let buf: &[u8] = &event;
     let mut cursor = Cursor::new(buf);
     let (header_buf, payload_buf) = match serde_ipld_dagcbor::from_reader::<Ipld, _>(&mut cursor) {
@@ -109,7 +116,9 @@ async fn handle_event(app: &AppState, event: Bytes) -> Result<()> {
                 }
             }
 
-            if let Err(e) = handle_carslice(app, commit.repo, reader, &car_file, &records).await {
+            if let Err(e) =
+                handle_carslice(app, storage, commit.repo, reader, &car_file, &records).await
+            {
                 tracing::error!("{:?}", e);
             };
         }

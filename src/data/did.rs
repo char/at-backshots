@@ -21,10 +21,17 @@ impl AppState {
     }
 
     pub async fn encode_did(&self, did: &str) -> Result<Did> {
-        if let Ok(Some(zplc)) = self.lookup_zplc(did).await {
-            return Ok(zplc);
+        if did.starts_with("did:plc:") {
+            if let Ok(Some(zplc)) = self.lookup_zplc(did).await {
+                return Ok(zplc);
+            }
         }
 
+        self.encode_did_sync(did)
+    }
+
+    /// encodes a did but doesn't look up a zplc
+    pub fn encode_did_sync(&self, did: &str) -> Result<Did> {
         if let Some(did) = self.db_dids_reverse.get(did)? {
             let mut bytes = [0u8; 8];
             bytes.copy_from_slice(&did[0..8]);

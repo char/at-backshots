@@ -4,6 +4,8 @@ use zerocopy::{BigEndian, FromBytes, IntoBytes, U64};
 
 use crate::AppState;
 
+use super::at_uri::parse_at_uri;
+
 // this is just an index into the collections table
 pub type RecordCollection = u64;
 
@@ -11,13 +13,24 @@ pub type RecordCollection = u64;
 // otherwise, this is a 120 bit index into the rkeys table
 pub type RecordKey = [u8; 16];
 
-#[derive(Debug, Clone, Copy, IntoBytes, FromBytes)]
+#[derive(Debug, Clone, Copy, IntoBytes, FromBytes, PartialEq, Eq)]
 #[repr(C, packed)]
 pub struct RecordId {
     pub rkey: [u8; 16],
     pub collection: U64<BigEndian>,
     pub did: U64<BigEndian>,
     // pub cid: CidV1Sha256,
+}
+
+impl RecordId {
+    pub fn from_at_uri(app: &AppState, uri: &str) -> Result<Self> {
+        let (repo, collection, rkey) = parse_at_uri(uri)?;
+        Ok(Self {
+            rkey: app.encode_rkey(rkey)?,
+            collection: U64::new(app.encode_collection(collection)?),
+            did: U64::new(app.encode_did_sync(repo)?),
+        })
+    }
 }
 
 impl AppState {
