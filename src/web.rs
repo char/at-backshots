@@ -7,8 +7,15 @@ use tokio::net::TcpListener;
 
 use crate::{
     http::{body_full, Body},
+    storage::IndexEntry,
     AppState,
 };
+
+async fn get_target_count() -> Result<u64> {
+    let f = tokio::fs::File::open("./data/backlinks/index.dat").await?;
+    let metadata = f.metadata().await?;
+    Ok(metadata.len() / std::mem::size_of::<IndexEntry>() as u64)
+}
 
 async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Body>> {
     let path = req.uri().path();
@@ -25,11 +32,12 @@ async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Bo
             .body(body_full(format!(
                 r#"status:
 collections: {}
-backlinks: {}
+backlinks: {} (targets: {})
 outline rkeys: {}
 non-zplc dids: {}"#,
                 app.db_collections.len(),
                 app.fetch_backlink_count()?,
+                get_target_count().await.unwrap_or_default(),
                 app.db_rkeys.len(),
                 app.db_dids.len(),
             )))?),
