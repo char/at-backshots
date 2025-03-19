@@ -4,8 +4,6 @@ use hyper::{Request, StatusCode};
 
 use crate::{http::body_empty, http::client::fetch, AppState};
 
-// TODO: i need to write the zplc server before we can use this. lol
-
 impl AppState {
     pub async fn zplc_to_did(&self, id: u64) -> Result<String> {
         let zplc_server = &self.zplc_server;

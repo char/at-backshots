@@ -19,8 +19,10 @@ pub async fn handle_backlinks(
         return Ok(());
     }
 
+    let (src_did_hi, src_did_lo) = RecordId::split_did(app.encode_did(repo).await?);
     let source = RecordId {
-        did: app.encode_did(repo).await?.into(),
+        did_hi: src_did_hi.into(),
+        did_lo: src_did_lo.into(),
         collection: app.encode_collection(collection)?.into(),
         rkey: app.encode_rkey(rkey)?,
     };
@@ -43,8 +45,11 @@ pub async fn handle_backlinks(
             collection: &str,
             rkey: &str,
         ) -> Result<RecordId> {
+            let did = app.encode_did(repo).await?;
+            let (did_hi, did_lo) = RecordId::split_did(did);
             Ok(RecordId {
-                did: app.encode_did(repo).await?.into(),
+                did_hi: did_hi.into(),
+                did_lo: did_lo.into(),
                 collection: app.encode_collection(collection)?.into(),
                 rkey: app.encode_rkey(rkey)?,
             })
@@ -55,10 +60,9 @@ pub async fn handle_backlinks(
                 tracing::debug!(from = source_display, to = uri, "backlink");
 
                 // TODO: we probably shouldnt block the runtime like this but whatever
-                storage.store_backlink(&target, &source)?;
+                storage.write_backlink(&target, &source)?;
 
                 app.incr_backlink_count(1)?;
-                // app.db_records.merge(&target_bytes, &source_bytes)?;
             }
             Err(e) => tracing::warn!("failed to create RecordId: {:?}", e),
         };

@@ -1,4 +1,7 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::{atomic::Ordering, Arc},
+};
 
 use anyhow::Result;
 use hyper::{body::Incoming, header, server::conn::http1, Method, Request, Response, StatusCode};
@@ -7,15 +10,8 @@ use tokio::net::TcpListener;
 
 use crate::{
     http::{body_full, Body},
-    storage::IndexEntry,
     AppState,
 };
-
-async fn get_target_count() -> Result<u64> {
-    let f = tokio::fs::File::open("./data/backlinks/index.dat").await?;
-    let metadata = f.metadata().await?;
-    Ok(metadata.len() / std::mem::size_of::<IndexEntry>() as u64)
-}
 
 async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Body>> {
     let path = req.uri().path();
@@ -37,7 +33,7 @@ outline rkeys: {}
 non-zplc dids: {}"#,
                 app.db_collections.len(),
                 app.fetch_backlink_count()?,
-                get_target_count().await.unwrap_or_default(),
+                app.targets_count.load(Ordering::Relaxed),
                 app.db_rkeys.len(),
                 app.db_dids.len(),
             )))?),

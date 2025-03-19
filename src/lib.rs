@@ -1,3 +1,5 @@
+use std::sync::{atomic::AtomicU64, Arc};
+
 use anyhow::Result;
 
 pub mod car;
@@ -20,6 +22,8 @@ pub struct AppState {
     pub db_collections_reverse: sled::Tree,
     pub db_dids: sled::Tree,
     pub db_dids_reverse: sled::Tree,
+
+    pub targets_count: Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -39,6 +43,8 @@ impl AppState {
         let db_dids = db.open_tree(b"dids")?;
         let db_dids_reverse = db.open_tree(b"dids_r")?;
 
+        let targets_count = Arc::new(AtomicU64::default());
+
         Ok(Self {
             zplc_server,
 
@@ -50,6 +56,8 @@ impl AppState {
 
             db_dids,
             db_dids_reverse,
+
+            targets_count,
         })
     }
 

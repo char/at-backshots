@@ -13,7 +13,7 @@ use super::carslice::handle_carslice;
 
 pub async fn ingest_repo_archive<R: AsyncRead + AsyncSeek + Unpin>(
     app: &AppState,
-    storage: &mut BacklinkStorage<std::fs::File, std::fs::File>,
+    storage: &mut BacklinkStorage,
     repo: String,
     reader: &mut R,
 ) -> Result<()> {

@@ -13,10 +13,12 @@ hyper = { version = "1.6.0", features = ["full"] }
 hyper-util = { version = "0.1.10", features = ["full", "tokio"] }
 ipld-core = "0.4.2"
 multibase = "0.9.1"
+nix = { version = "0.29.0", features = ["fs", "uio"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_bytes = "0.11.17"
 serde_ipld_dagcbor = "0.6.2"
 sled = { version = "0.34.7", features = ["compression"] }
+tinyjson = "2.5.1"
 tokio = { version = "1.44.1", features = ["full"] }
 tokio-rustls = "0.26.2"
 tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-webpki-roots"] }

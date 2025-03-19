@@ -1,171 +1,343 @@
 use std::{
+    collections::BTreeMap,
     fs::File,
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Seek, SeekFrom, Write},
+    os::fd::AsFd,
+    path::Path,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 use anyhow::Result;
-use zerocopy::{BigEndian, FromBytes, IntoBytes, KnownLayout, I64, U64};
+use nix::{libc::off_t, sys::uio};
+use zerocopy::{BigEndian, FromBytes, Immutable, IntoBytes, KnownLayout, I32, U64};
 
-use crate::{data::record::RecordId, AppState};
+use crate::data::record::RecordId;
+
+#[derive(Clone, Copy, KnownLayout, IntoBytes, FromBytes)]
+#[repr(C, packed)]
+pub struct Padding<const LEN: usize>(pub [u8; LEN]);
+impl<const LEN: usize> std::fmt::Debug for Padding<LEN> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Padding").finish()
+    }
+}
+impl<const LEN: usize> From<[u8; LEN]> for Padding<LEN> {
+    fn from(value: [u8; LEN]) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, KnownLayout, IntoBytes, FromBytes)]
+pub struct IndexHeader {
+    pub num_links: u64,
+    _pad: Padding<56>,
+}
+const INDEX_HEADER_SIZE: usize = std::mem::size_of::<IndexHeader>();
+// assert IndexHeader is 64 bytes
+const _: [(); 64] = [(); INDEX_HEADER_SIZE];
 
 #[derive(Debug, Clone, Copy, KnownLayout, IntoBytes, FromBytes)]
 #[repr(C, packed)]
 pub struct IndexEntry {
     pub target: RecordId,
-    // absolute offset in backlinks to BacklinkEntry (0 if null)
-    pub first: U64<BigEndian>,
-    // TODO: last ? then we don't have to walk the whole list on every append
+    // absolute index in backlinks to BacklinkEntry (MAX_VALUE if null)
+    pub head: U64<BigEndian>,
+    pub tail: U64<BigEndian>,
+    // _pad: Padding<16>,
+}
+const INDEX_ENTRY_SIZE: usize = std::mem::size_of::<IndexEntry>();
+// assert IndexEntry is 40 bytes
+const _: [(); 40] = [(); INDEX_ENTRY_SIZE];
+
+#[derive(Debug, Clone, Copy, KnownLayout, IntoBytes, FromBytes, Immutable)]
+#[repr(C, packed)]
+pub struct IndexValue {
+    pub head: U64<BigEndian>,
+    pub tail: U64<BigEndian>,
+    pub idx: U64<BigEndian>,
 }
 
 #[derive(Debug, Clone, Copy, IntoBytes, FromBytes)]
 #[repr(C, packed)]
 pub struct BacklinkEntry {
     pub source: RecordId,
-    pub next: I64<BigEndian>, // relative offset in backlinks to BacklinkEntry (0 if null)
+    pub next: I32<BigEndian>, // relative offset in backlinks to BacklinkEntry (0 if null)
+    pub prev: I32<BigEndian>,
 }
-const BACKLINK_ENTRY_LEN: usize = std::mem::size_of::<BacklinkEntry>();
+const BACKLINK_ENTRY_SIZE: usize = std::mem::size_of::<BacklinkEntry>();
+// assert BacklinkEntry is 32 bytes
+const _: [(); 32] = [(); BACKLINK_ENTRY_SIZE];
 
-pub struct BacklinkStorage<S1: Read + Write + Seek = File, S2: Read + Write + Seek = File> {
-    tail: u64,
-    index: S1,
-    backlinks: S2,
-}
-
-impl BacklinkStorage<File, File> {
-    pub fn new(dir: impl AsRef<std::path::Path>) -> Result<Self> {
-        let _ = std::fs::create_dir_all(dir.as_ref());
-
-        let backlinks = File::options()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(dir.as_ref().join("./backlinks.dat"))?;
-
-        let index = File::options()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(dir.as_ref().join("./index.dat"))?;
-
-        let mut storage = BacklinkStorage {
-            backlinks,
-            index,
-            tail: 0,
-        };
-        let _ = storage.read_tail();
-        Ok(storage)
-    }
+pub struct BacklinkStorage {
+    index_btree: BTreeMap<RecordId, IndexValue>,
+    index_file: File,        // create, write, read
+    index_file_append: File, // append
+    links_file: File,        // create, write, read
+    targets_count: Arc<AtomicU64>,
 }
 
-impl<S1, S2> BacklinkStorage<S1, S2>
-where
-    S1: Read + Write + Seek,
-    S2: Read + Write + Seek,
-{
-    pub fn find(&mut self, record: &RecordId) -> Result<u64> {
-        // TODO: probably some B-tree bullshit instead of using the flat file
-        // but this is super compact and it should be fine until we're reading like a gigabyte
-        self.index.seek(SeekFrom::Start(8))?;
-        loop {
-            let index_entry = IndexEntry::read_from_io(&mut self.index)?;
-            if &index_entry.target == record {
-                break Ok(index_entry.first.get());
-            }
+fn pread_all(fd: impl AsFd, buf: &mut [u8], offset: usize) -> Result<()> {
+    let mut read = 0;
+    while read < buf.len() {
+        let res = uio::pread(fd.as_fd(), &mut buf[read..], (offset + read) as off_t)?;
+        read += res;
+        if res == 0 {
+            anyhow::bail!("no data to read");
         }
     }
+    Ok(())
+}
 
-    fn read_tail(&mut self) -> Result<()> {
-        self.index.seek(SeekFrom::Start(0))?;
-        let mut buf = [0u8; 8];
-        self.index.read_exact(&mut buf)?;
-        self.tail = u64::from_be_bytes(buf);
+fn pwrite_all(fd: impl AsFd, buf: &[u8], offset: usize) -> Result<()> {
+    let mut written = 0;
+    while written < buf.len() {
+        written += uio::pwrite(fd.as_fd(), &buf[written..], (offset + written) as off_t)?;
+    }
+    Ok(())
+}
+
+impl BacklinkStorage {
+    pub fn new(dir: impl AsRef<Path>, targets_count: Arc<AtomicU64>) -> Result<Self> {
+        let base_options = File::options()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .read(true)
+            .clone();
+
+        let mut index_file = base_options
+            .clone()
+            .open(dir.as_ref().join("./index.dat"))?;
+        let index_file_append = base_options
+            .clone()
+            .write(false)
+            .append(true)
+            .open(dir.as_ref().join("./index.dat"))?;
+        {
+            let mut buf = [0u8; INDEX_HEADER_SIZE];
+            if pread_all(&index_file, &mut buf, 0).is_err() {
+                let mut header = IndexHeader {
+                    num_links: 0,
+                    _pad: [0u8; 56].into(),
+                };
+                pwrite_all(&mut index_file, header.as_mut_bytes(), 0)?;
+            }
+        };
+
+        // let index_lsm = IndexTree::recover(dir.as_ref().join("./index-lsm"))?;
+        let index_btree = Self::load_btree(&mut index_file)?;
+        targets_count.store(index_btree.len() as u64, Ordering::Relaxed);
+
+        let links_file = base_options
+            .clone()
+            .open(dir.as_ref().join("./links.dat"))?;
+
+        Ok(Self {
+            index_file,
+            index_file_append,
+            index_btree,
+            links_file,
+            targets_count,
+        })
+    }
+
+    fn load_btree(index_file: &mut File) -> Result<BTreeMap<RecordId, IndexValue>> {
+        // TODO: this should probably not be all in-memory but we ball for now
+
+        let mut map = BTreeMap::new();
+        index_file.seek(SeekFrom::Start(INDEX_HEADER_SIZE as u64))?;
+        let mut idx = 0;
+        loop {
+            let Ok(entry) = IndexEntry::read_from_io(&mut *index_file) else {
+                break;
+            };
+            map.insert(
+                entry.target,
+                IndexValue {
+                    head: entry.head,
+                    tail: entry.tail,
+                    idx: idx.into(),
+                },
+            );
+            idx += 1;
+        }
+
+        Ok(map)
+    }
+
+    fn find_in_index(&mut self, target: &RecordId) -> Result<IndexValue> {
+        let lsm_value = self
+            .index_btree
+            .get(target)
+            .ok_or(anyhow::anyhow!("not found"))?;
+        Ok(*lsm_value)
+    }
+
+    fn update_index(&mut self, target: &RecordId, index_value: IndexValue) -> Result<()> {
+        let index_entry_idx = usize::try_from(index_value.idx.get()).unwrap();
+
+        self.index_btree.insert(*target, index_value);
+        self.targets_count
+            .store(self.index_btree.len() as u64, Ordering::Relaxed);
+        pwrite_all(
+            &mut self.index_file,
+            IndexEntry {
+                target: *target,
+                head: index_value.head,
+                tail: index_value.tail,
+            }
+            .as_mut_bytes(),
+            INDEX_HEADER_SIZE + index_entry_idx * INDEX_ENTRY_SIZE,
+        )?;
         Ok(())
     }
 
-    pub fn store_backlink(&mut self, target: &RecordId, source: &RecordId) -> Result<()> {
-        let mut entry = BacklinkEntry {
+    fn add_to_index(&mut self, target: &RecordId, index_value: IndexValue) -> Result<()> {
+        self.index_btree.insert(*target, index_value);
+        self.targets_count
+            .store(self.index_btree.len() as u64, Ordering::Relaxed);
+        self.index_file_append.write_all(
+            IndexEntry {
+                target: *target,
+                head: index_value.head,
+                tail: index_value.tail,
+            }
+            .as_mut_bytes(),
+        )?;
+
+        Ok(())
+    }
+
+    pub fn write_backlink(&mut self, target: &RecordId, source: &RecordId) -> Result<()> {
+        let mut new_entry = BacklinkEntry {
             source: *source,
-            next: I64::ZERO,
+            next: I32::ZERO,
+            prev: I32::ZERO,
         };
+        let new_entry_idx = {
+            // let index_raw_fd = self.index_file.as_raw_fd();
+            // flock(index_raw_fd, FlockArg::LockExclusive).expect("failed to acquire index.dat lock");
 
-        let new_entry_pos = self.tail;
-        self.backlinks.seek(SeekFrom::Start(new_entry_pos))?;
-        self.backlinks.write_all(entry.as_mut_bytes())?;
-
-        self.tail += std::mem::size_of::<BacklinkEntry>() as u64;
-        self.index.seek(SeekFrom::Start(0))?;
-        self.index.write_all(&self.tail.to_be_bytes())?;
-
-        if let Ok(offset) = self.find(target) {
-            self.backlinks.seek(SeekFrom::Start(offset))?;
-            let _backlink_entry = loop {
-                let curr_entry = BacklinkEntry::read_from_io(&mut self.backlinks)?;
-                self.backlinks
-                    .seek(SeekFrom::Current(-(BACKLINK_ENTRY_LEN as i64)))?;
-
-                let next = curr_entry.next.get();
-                if next == 0 {
-                    break curr_entry;
-                }
-                self.backlinks.seek(SeekFrom::Current(next))?;
+            let mut header: IndexHeader = {
+                let mut buf = [0u8; INDEX_HEADER_SIZE];
+                pread_all(&self.index_file, &mut buf, 0)?;
+                zerocopy::transmute!(buf)
             };
-            let tail_entry_pos = self.backlinks.stream_position()?;
-            entry.next.set(new_entry_pos as i64 - tail_entry_pos as i64);
-            self.backlinks.write_all(entry.as_mut_bytes())?;
-        } else {
-            self.index.seek(SeekFrom::End(0))?;
-            self.index.write_all(
+            let cnt = header.num_links;
+            header.num_links += 1;
+            // allocate empty space at cnt
+            let pos = usize::try_from(cnt).unwrap() * BACKLINK_ENTRY_SIZE;
+            pwrite_all(&mut self.links_file, &[0u8; BACKLINK_ENTRY_SIZE], pos)?;
+            pwrite_all(&mut self.index_file, header.as_mut_bytes(), 0)?;
+
+            // let _ = flock(index_raw_fd, FlockArg::Unlock);
+
+            cnt
+        };
+        let new_entry_pos = usize::try_from(new_entry_idx).unwrap() * BACKLINK_ENTRY_SIZE;
+
+        // if let Ok((index_entry_idx, mut index_entry)) = self.find(target) {
+        if let Ok(mut index_value) = self.find_in_index(target) {
+            let index_entry_idx = usize::try_from(index_value.idx.get()).unwrap();
+
+            if index_value.head == U64::MAX_VALUE {
+                index_value.head = U64::new(new_entry_idx);
+            }
+
+            // set prev to the end of the chain
+            if index_value.tail != U64::MAX_VALUE {
+                new_entry.prev.set(
+                    (index_value.tail.get() as i64 - new_entry_idx as i64)
+                        .try_into()
+                        .unwrap(),
+                );
+            }
+            pwrite_all(
+                &mut self.links_file,
+                new_entry.as_mut_bytes(),
+                new_entry_pos,
+            )?;
+
+            // update the 'next' at the end of the chain if we need to
+            if index_value.tail != U64::MAX_VALUE {
+                let tail_entry_idx: usize = index_value.tail.get().try_into().unwrap();
+                let mut tail_entry: BacklinkEntry = {
+                    let mut buf = [0u8; BACKLINK_ENTRY_SIZE];
+                    pread_all(
+                        &self.links_file,
+                        &mut buf,
+                        tail_entry_idx * BACKLINK_ENTRY_SIZE,
+                    )?;
+                    zerocopy::transmute!(buf)
+                };
+                tail_entry.next.set(
+                    (new_entry_idx as i64 - index_value.tail.get() as i64)
+                        .try_into()
+                        .unwrap(),
+                );
+                pwrite_all(
+                    &mut self.links_file,
+                    tail_entry.as_mut_bytes(),
+                    tail_entry_idx * BACKLINK_ENTRY_SIZE,
+                )?;
+            }
+
+            // update the index entry on disk
+            index_value.tail = U64::new(new_entry_idx);
+            self.update_index(target, index_value)?;
+            pwrite_all(
+                &mut self.index_file,
                 IndexEntry {
                     target: *target,
-                    first: U64::new(new_entry_pos),
+                    head: index_value.head,
+                    tail: index_value.tail,
                 }
                 .as_mut_bytes(),
+                INDEX_HEADER_SIZE + index_entry_idx * INDEX_ENTRY_SIZE,
+            )?;
+        } else {
+            let new_entry_off: usize = new_entry_idx.try_into().unwrap();
+            pwrite_all(
+                &mut self.links_file,
+                new_entry.as_mut_bytes(),
+                new_entry_off * BACKLINK_ENTRY_SIZE,
+            )?;
+            self.add_to_index(
+                target,
+                IndexValue {
+                    head: new_entry_idx.into(),
+                    tail: new_entry_idx.into(),
+                    idx: (self.index_btree.len() as u64).into(),
+                },
             )?;
         }
 
         Ok(())
     }
 
-    pub fn get_backlinks(&mut self, target: &RecordId) -> Result<Vec<RecordId>> {
-        let mut backlinks = Vec::new();
-        if let Ok(offset) = self.find(target) {
-            self.backlinks.seek(SeekFrom::Start(offset))?;
-            loop {
-                let entry = BacklinkEntry::read_from_io(&mut self.backlinks)?;
-                backlinks.push(entry.source);
-                let next = entry.next.get();
-                if next == 0 {
-                    break;
-                }
-                self.backlinks
-                    .seek(SeekFrom::Current(next - (BACKLINK_ENTRY_LEN as i64)))?;
+    pub fn read_backlinks(&mut self, target: &RecordId) -> Result<Vec<BacklinkEntry>> {
+        let index_value = self.find_in_index(target)?;
+
+        let mut links = Vec::new();
+        let mut link_idx = index_value.head.get();
+        loop {
+            let link: BacklinkEntry = {
+                let pos = usize::try_from(link_idx).unwrap() * BACKLINK_ENTRY_SIZE;
+                let mut buf = [0u8; BACKLINK_ENTRY_SIZE];
+                pread_all(&self.links_file, &mut buf, pos)?;
+                zerocopy::transmute!(buf)
+            };
+            links.push(link);
+            let next = link.next.get();
+            if next == 0 {
+                break;
             }
+            link_idx = link_idx.checked_add_signed(next as i64).unwrap();
         }
 
-        Ok(backlinks)
+        Ok(links)
     }
-}
-
-pub fn test_storage() -> Result<()> {
-    let app = AppState::new("http://127.0.0.1:2485".into())?;
-
-    let mut storage = BacklinkStorage::new("./backlinks")?;
-
-    let target = RecordId::from_at_uri(
-        &app,
-        "at://did:plc:7x6rtuenkuvxq3zsvffp2ide/app.bsky.feed.post/3lkpfgi6mck23",
-    )?;
-    storage.store_backlink(
-        &target,
-        &RecordId::from_at_uri(
-            &app,
-            "at://did:plc:7x6rtuenkuvxq3zsvffp2ide/app.bsky.feed.post/3lkphv6xqn22i",
-        )?,
-    )?;
-
-    dbg!(storage.get_backlinks(&target)?);
-
-    Ok(())
 }
