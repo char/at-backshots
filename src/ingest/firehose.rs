@@ -50,9 +50,16 @@ pub async fn ingest_firehose(
         let (mut ws, _res) = tokio_tungstenite::connect_async(req)
             .await
             .context("failed to connect websocket")?;
-
         loop {
-            match ws.next().await {
+            let response = match tokio::time::timeout(Duration::from_secs(5), ws.next()).await {
+                Ok(response) => response,
+                Err(_timeout) => {
+                    tracing::info!("websocket stream went quiet, reconnecting");
+                    let _ = ws.close(None).await;
+                    continue 'reconnect;
+                }
+            };
+            match response {
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(bytes))) => {
                     handle_event(app, &mut storage, bytes).await?;
                 }
@@ -66,10 +73,12 @@ pub async fn ingest_firehose(
                 }
                 Some(Err(e)) => {
                     tracing::error!("got error from websocket stream: {e:?}");
+                    let _ = ws.close(None).await;
                     break 'reconnect;
                 }
                 None => {
                     tracing::info!("got no response from websocket stream, reconnecting");
+                    let _ = ws.close(None).await;
                     continue 'reconnect;
                 }
             }
@@ -116,11 +125,13 @@ async fn handle_event(app: &AppState, storage: &mut BacklinkStorage, event: Byte
                 }
             }
 
-            if let Err(e) =
-                handle_carslice(app, storage, commit.repo, reader, &car_file, &records).await
-            {
-                tracing::error!("{:?}", e);
-            };
+            if !records.is_empty() {
+                if let Err(e) =
+                    handle_carslice(app, storage, commit.repo, reader, &car_file, &records).await
+                {
+                    tracing::error!("{:?}", e);
+                };
+            }
         }
         Some("#info") => {
             let payload = serde_ipld_dagcbor::from_slice::<SubscribeReposInfo>(payload_buf)?;
