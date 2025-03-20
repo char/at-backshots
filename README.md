@@ -2,6 +2,9 @@
 
 backlink aggregator for atproto focusing on compact representation of historical data
 
+the schema for how backlink data is stored is currently subject to change.
+don't run this just yet!
+
 ## requirements
 
 - zplc server listening at 127.0.0.1:2485
