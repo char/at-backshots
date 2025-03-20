@@ -33,7 +33,7 @@ outline rkeys: {}
 non-zplc dids: {}"#,
                 app.db_collections.len(),
                 app.fetch_backlink_count()?,
-                app.targets_count.load(Ordering::Relaxed),
+                0, // TODO: read targets count from backlink storage
                 app.db_rkeys.len(),
                 app.db_dids.len(),
             )))?),

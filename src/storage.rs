@@ -2,16 +2,16 @@ use std::{
     collections::BTreeMap,
     fs::File,
     io::{Seek, SeekFrom, Write},
-    os::fd::AsFd,
+    os::fd::{AsFd, AsRawFd},
     path::Path,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
 };
 
 use anyhow::Result;
-use nix::{libc::off_t, sys::uio};
+use nix::{
+    fcntl::{flock, FlockArg},
+    libc::off_t,
+    sys::uio,
+};
 use zerocopy::{BigEndian, FromBytes, Immutable, IntoBytes, KnownLayout, I32, U64};
 
 use crate::data::record::RecordId;
@@ -76,7 +76,6 @@ pub struct BacklinkStorage {
     index_file: File,        // create, write, read
     index_file_append: File, // append
     links_file: File,        // create, write, read
-    targets_count: Arc<AtomicU64>,
 }
 
 fn pread_all(fd: impl AsFd, buf: &mut [u8], offset: usize) -> Result<()> {
@@ -100,7 +99,7 @@ fn pwrite_all(fd: impl AsFd, buf: &[u8], offset: usize) -> Result<()> {
 }
 
 impl BacklinkStorage {
-    pub fn new(dir: impl AsRef<Path>, targets_count: Arc<AtomicU64>) -> Result<Self> {
+    pub fn new(dir: impl AsRef<Path>) -> Result<Self> {
         let base_options = File::options()
             .create(true)
             .truncate(false)
@@ -129,7 +128,6 @@ impl BacklinkStorage {
 
         // let index_lsm = IndexTree::recover(dir.as_ref().join("./index-lsm"))?;
         let index_btree = Self::load_btree(&mut index_file)?;
-        targets_count.store(index_btree.len() as u64, Ordering::Relaxed);
 
         let links_file = base_options
             .clone()
@@ -140,7 +138,6 @@ impl BacklinkStorage {
             index_file_append,
             index_btree,
             links_file,
-            targets_count,
         })
     }
 
@@ -180,8 +177,6 @@ impl BacklinkStorage {
         let index_entry_idx = usize::try_from(index_value.idx.get()).unwrap();
 
         self.index_btree.insert(*target, index_value);
-        self.targets_count
-            .store(self.index_btree.len() as u64, Ordering::Relaxed);
         pwrite_all(
             &mut self.index_file,
             IndexEntry {
@@ -197,8 +192,6 @@ impl BacklinkStorage {
 
     fn add_to_index(&mut self, target: &RecordId, index_value: IndexValue) -> Result<()> {
         self.index_btree.insert(*target, index_value);
-        self.targets_count
-            .store(self.index_btree.len() as u64, Ordering::Relaxed);
         self.index_file_append.write_all(
             IndexEntry {
                 target: *target,
@@ -218,8 +211,8 @@ impl BacklinkStorage {
             prev: I32::ZERO,
         };
         let new_entry_idx = {
-            // let index_raw_fd = self.index_file.as_raw_fd();
-            // flock(index_raw_fd, FlockArg::LockExclusive).expect("failed to acquire index.dat lock");
+            let index_raw_fd = self.index_file.as_raw_fd();
+            flock(index_raw_fd, FlockArg::LockExclusive).expect("failed to acquire index.dat lock");
 
             let mut header: IndexHeader = {
                 let mut buf = [0u8; INDEX_HEADER_SIZE];
@@ -233,7 +226,7 @@ impl BacklinkStorage {
             pwrite_all(&mut self.links_file, &[0u8; BACKLINK_ENTRY_SIZE], pos)?;
             pwrite_all(&mut self.index_file, header.as_mut_bytes(), 0)?;
 
-            // let _ = flock(index_raw_fd, FlockArg::Unlock);
+            let _ = flock(index_raw_fd, FlockArg::Unlock);
 
             cnt
         };

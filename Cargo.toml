@@ -30,3 +30,15 @@ zerocopy = { version = "0.8.23", features = ["derive", "std"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "io_uring"] }
+
+[[bin]]
+name = "api"
+path = "src/cmds/api.rs"
+
+[[bin]]
+name = "firehose-ingest"
+path = "src/cmds/firehose_ingest.rs"
+
+[[bin]]
+name = "json-ingest"
+path = "src/cmds/json_ingest.rs"
