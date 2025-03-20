@@ -1,6 +1,6 @@
 use std::{
     net::SocketAddr,
-    sync::{atomic::Ordering, Arc},
+    sync::Arc,
 };
 
 use anyhow::Result;

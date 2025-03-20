@@ -1,3 +1,6 @@
+// i need nix::fnctl::flock(..) because Flock wants an OwnedFd instead of one that stays open
+#![allow(deprecated)]
+
 use std::{
     collections::BTreeMap,
     fs::File,
