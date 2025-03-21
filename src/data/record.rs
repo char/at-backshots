@@ -68,7 +68,7 @@ impl AppState {
         if rkey[0] == 0 {
             let mut bytes = [0u8; 8];
             bytes.copy_from_slice(&rkey[6..]);
-            let rkey_id: u64 = u64::from_be_bytes(bytes).try_into()?;
+            let rkey_id = u64::from_be_bytes(bytes);
             let rkey: String = self
                 .db()
                 .query_row(

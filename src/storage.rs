@@ -129,7 +129,6 @@ impl BacklinkStorage {
             }
         };
 
-        // let index_lsm = IndexTree::recover(dir.as_ref().join("./index-lsm"))?;
         let index_btree = Self::load_btree(&mut index_file)?;
 
         let links_file = base_options
@@ -169,11 +168,11 @@ impl BacklinkStorage {
     }
 
     fn find_in_index(&mut self, target: &RecordId) -> Result<IndexValue> {
-        let lsm_value = self
+        let value = self
             .index_btree
             .get(target)
             .ok_or(anyhow::anyhow!("not found"))?;
-        Ok(*lsm_value)
+        Ok(*value)
     }
 
     fn update_index(&mut self, target: &RecordId, index_value: IndexValue) -> Result<()> {
@@ -235,7 +234,6 @@ impl BacklinkStorage {
         };
         let new_entry_pos = usize::try_from(new_entry_idx).unwrap() * BACKLINK_ENTRY_SIZE;
 
-        // if let Ok((index_entry_idx, mut index_entry)) = self.find(target) {
         if let Ok(mut index_value) = self.find_in_index(target) {
             let index_entry_idx = usize::try_from(index_value.idx.get()).unwrap();
 
@@ -295,11 +293,10 @@ impl BacklinkStorage {
                 INDEX_HEADER_SIZE + index_entry_idx * INDEX_ENTRY_SIZE,
             )?;
         } else {
-            let new_entry_off: usize = new_entry_idx.try_into().unwrap();
             pwrite_all(
                 &mut self.links_file,
                 new_entry.as_mut_bytes(),
-                new_entry_off * BACKLINK_ENTRY_SIZE,
+                new_entry_pos,
             )?;
             self.add_to_index(
                 target,
