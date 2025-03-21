@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use zerocopy::{BigEndian, FromBytes, Immutable, IntoBytes, U16, U32, U64};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::{
     tid::{is_tid, s32decode, s32encode},
@@ -17,25 +17,16 @@ pub const RKEY_DB_MASK: u64 = !RKEY_FLAG_NOT_TID;
 #[derive(Clone, Copy, IntoBytes, FromBytes, Immutable, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C, packed)]
 pub struct RecordId {
-    pub rkey: U64<BigEndian>,
-    pub collection: U16<BigEndian>, // if this is U16::MAX then we are a RecordIdExt
-    pub did_hi: U16<BigEndian>,
-    pub did_lo: U32<BigEndian>,
-    // pub cid: CidV1Sha256,
-}
-
-#[derive(Clone, Copy, IntoBytes, FromBytes, Immutable, PartialEq, Eq, PartialOrd, Ord)]
-pub struct RecordIdExt {
-    pub rkey: U64<BigEndian>,
-    pub marker: U16<BigEndian>,
-    pub did_hi: U16<BigEndian>,
-    pub did_lo: U32<BigEndian>,
-    pub collection: U32<BigEndian>,
+    pub rkey: u64,
+    pub did_hi: u16,
+    pub did_lo: u32,
+    // u16::MAX signals that we need extended data
+    pub collection: u16,
 }
 
 impl RecordId {
     pub fn did(&self) -> Did {
-        ((self.did_hi.get() as u64) << 32) | self.did_lo.get() as u64
+        ((self.did_hi as u64) << 32) | self.did_lo as u64
     }
     pub fn split_did(did: Did) -> (u16, u32) {
         (
@@ -47,10 +38,10 @@ impl RecordId {
     pub fn new(did: u64, collection: u32, rkey: u64) -> Self {
         let (did_hi, did_lo) = Self::split_did(did);
         Self {
-            rkey: U64::new(rkey),
-            collection: U16::new(collection.try_into().expect("too many collections!")),
-            did_hi: U16::new(did_hi),
-            did_lo: U32::new(did_lo),
+            rkey,
+            collection: collection.try_into().unwrap_or(u16::MAX),
+            did_hi,
+            did_lo,
         }
     }
 }
@@ -69,8 +60,9 @@ impl RecordId {
 impl std::fmt::Debug for RecordId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RecordId")
-            .field("rkey", &self.rkey.get())
-            .field("collection", &self.collection.get())
+            // looks weird because ref to unaligned field
+            .field("rkey", &u64::from(self.rkey))
+            .field("collection", &u16::from(self.collection))
             .field("did", &self.did())
             .finish()
     }

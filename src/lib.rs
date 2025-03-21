@@ -1,4 +1,7 @@
-use std::sync::{Mutex, MutexGuard};
+use std::{
+    path::Path,
+    sync::{Mutex, MutexGuard},
+};
 
 use anyhow::Result;
 use rusqlite::Connection;
@@ -22,9 +25,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(zplc_server: String) -> Result<Self> {
-        let _ = std::fs::create_dir_all("./data");
-        let db = Connection::open("./data/db.db")?;
+    pub fn new(data_dir: impl AsRef<Path>, zplc_server: String) -> Result<Self> {
+        let _ = std::fs::create_dir_all(data_dir.as_ref());
+        let db = Connection::open(data_dir.as_ref().join("./db"))?;
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.execute(
             "CREATE TABLE IF NOT EXISTS counts (

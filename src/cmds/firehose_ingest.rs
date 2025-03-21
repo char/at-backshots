@@ -10,9 +10,12 @@ pub async fn main() -> anyhow::Result<()> {
         .with("backshots=debug".parse::<EnvFilter>().unwrap())
         .init();
 
-    let app = Arc::new(AppState::new("http://127.0.0.1:2485".into())?);
+    let app = Arc::new(AppState::new(
+        "/dev/shm/backshots/data",
+        "http://127.0.0.1:2485".into(),
+    )?);
 
-    let storage = BacklinkStorage::new("./data/")?;
+    let storage = BacklinkStorage::new("/dev/shm/backshots/data")?;
     match ingest_firehose(&app, storage, "bsky.network", 443, true).await {
         Ok(_) => {}
         Err(e) => tracing::error!("ingest error: {:?}", e),

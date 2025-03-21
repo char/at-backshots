@@ -15,7 +15,7 @@ use nix::{
     libc::off_t,
     sys::uio,
 };
-use zerocopy::{BigEndian, FromBytes, Immutable, IntoBytes, KnownLayout, I32, U64};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::data::record::RecordId;
 
@@ -47,8 +47,8 @@ const _: [(); 64] = [(); INDEX_HEADER_SIZE];
 pub struct IndexEntry {
     pub target: RecordId,
     // absolute index in backlinks to BacklinkEntry (MAX_VALUE if null)
-    pub head: U64<BigEndian>,
-    pub tail: U64<BigEndian>,
+    pub head: u64,
+    pub tail: u64,
     // _pad: Padding<16>,
 }
 const INDEX_ENTRY_SIZE: usize = std::mem::size_of::<IndexEntry>();
@@ -58,17 +58,17 @@ const _: [(); 32] = [(); INDEX_ENTRY_SIZE];
 #[derive(Debug, Clone, Copy, KnownLayout, IntoBytes, FromBytes, Immutable)]
 #[repr(C, packed)]
 pub struct IndexValue {
-    pub head: U64<BigEndian>,
-    pub tail: U64<BigEndian>,
-    pub idx: U64<BigEndian>,
+    pub head: u64,
+    pub tail: u64,
+    pub idx: u64,
 }
 
 #[derive(Debug, Clone, Copy, IntoBytes, FromBytes)]
 #[repr(C, packed)]
 pub struct BacklinkEntry {
     pub source: RecordId,
-    pub next: I32<BigEndian>, // relative offset in backlinks to BacklinkEntry (0 if null)
-    pub prev: I32<BigEndian>,
+    pub next: i32, // relative offset in backlinks to BacklinkEntry (0 if null)
+    pub prev: i32,
 }
 const BACKLINK_ENTRY_SIZE: usize = std::mem::size_of::<BacklinkEntry>();
 // assert BacklinkEntry is 24 bytes
@@ -158,7 +158,7 @@ impl BacklinkStorage {
                 IndexValue {
                     head: entry.head,
                     tail: entry.tail,
-                    idx: idx.into(),
+                    idx,
                 },
             );
             idx += 1;
@@ -176,7 +176,7 @@ impl BacklinkStorage {
     }
 
     fn update_index(&mut self, target: &RecordId, index_value: IndexValue) -> Result<()> {
-        let index_entry_idx = usize::try_from(index_value.idx.get()).unwrap();
+        let index_entry_idx = usize::try_from(index_value.idx).unwrap();
 
         self.index_btree.insert(*target, index_value);
         pwrite_all(
@@ -209,8 +209,8 @@ impl BacklinkStorage {
     pub fn write_backlink(&mut self, target: &RecordId, source: &RecordId) -> Result<()> {
         let mut new_entry = BacklinkEntry {
             source: *source,
-            next: I32::ZERO,
-            prev: I32::ZERO,
+            next: 0,
+            prev: 0,
         };
         let new_entry_idx = {
             let index_raw_fd = self.index_file.as_raw_fd();
@@ -235,19 +235,17 @@ impl BacklinkStorage {
         let new_entry_pos = usize::try_from(new_entry_idx).unwrap() * BACKLINK_ENTRY_SIZE;
 
         if let Ok(mut index_value) = self.find_in_index(target) {
-            let index_entry_idx = usize::try_from(index_value.idx.get()).unwrap();
+            let index_entry_idx = usize::try_from(index_value.idx).unwrap();
 
-            if index_value.head == U64::MAX_VALUE {
-                index_value.head = U64::new(new_entry_idx);
+            if index_value.head == u64::MAX {
+                index_value.head = new_entry_idx;
             }
 
             // set prev to the end of the chain
-            if index_value.tail != U64::MAX_VALUE {
-                new_entry.prev.set(
-                    (index_value.tail.get() as i64 - new_entry_idx as i64)
-                        .try_into()
-                        .unwrap(),
-                );
+            if index_value.tail != u64::MAX {
+                new_entry.prev = (index_value.tail as i64 - new_entry_idx as i64)
+                    .try_into()
+                    .unwrap();
             }
             pwrite_all(
                 &mut self.links_file,
@@ -256,8 +254,8 @@ impl BacklinkStorage {
             )?;
 
             // update the 'next' at the end of the chain if we need to
-            if index_value.tail != U64::MAX_VALUE {
-                let tail_entry_idx: usize = index_value.tail.get().try_into().unwrap();
+            if index_value.tail != u64::MAX {
+                let tail_entry_idx: usize = index_value.tail.try_into().unwrap();
                 let mut tail_entry: BacklinkEntry = {
                     let mut buf = [0u8; BACKLINK_ENTRY_SIZE];
                     pread_all(
@@ -267,11 +265,9 @@ impl BacklinkStorage {
                     )?;
                     zerocopy::transmute!(buf)
                 };
-                tail_entry.next.set(
-                    (new_entry_idx as i64 - index_value.tail.get() as i64)
-                        .try_into()
-                        .unwrap(),
-                );
+                tail_entry.next = (new_entry_idx as i64 - index_value.tail as i64)
+                    .try_into()
+                    .unwrap();
                 pwrite_all(
                     &mut self.links_file,
                     tail_entry.as_mut_bytes(),
@@ -280,7 +276,7 @@ impl BacklinkStorage {
             }
 
             // update the index entry on disk
-            index_value.tail = U64::new(new_entry_idx);
+            index_value.tail = new_entry_idx;
             self.update_index(target, index_value)?;
             pwrite_all(
                 &mut self.index_file,
@@ -315,7 +311,7 @@ impl BacklinkStorage {
         let index_value = self.find_in_index(target)?;
 
         let mut links = Vec::new();
-        let mut link_idx = index_value.head.get();
+        let mut link_idx = index_value.head;
         loop {
             let link: BacklinkEntry = {
                 let pos = usize::try_from(link_idx).unwrap() * BACKLINK_ENTRY_SIZE;
@@ -324,11 +320,10 @@ impl BacklinkStorage {
                 zerocopy::transmute!(buf)
             };
             links.push(link);
-            let next = link.next.get();
-            if next == 0 {
+            if link.next == 0 {
                 break;
             }
-            link_idx = link_idx.checked_add_signed(next as i64).unwrap();
+            link_idx = link_idx.checked_add_signed(link.next as i64).unwrap();
         }
 
         Ok(links)
