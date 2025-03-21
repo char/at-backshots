@@ -297,9 +297,9 @@ impl BacklinkStorage {
             self.add_to_index(
                 target,
                 IndexValue {
-                    head: new_entry_idx.into(),
-                    tail: new_entry_idx.into(),
-                    idx: (self.index_btree.len() as u64).into(),
+                    head: new_entry_idx,
+                    tail: new_entry_idx,
+                    idx: self.index_btree.len() as u64,
                 },
             )?;
         }
