@@ -59,14 +59,11 @@ pub async fn ingest_json(app: &AppState, mut storage: BacklinkStorage) -> Result
             Action::Delete(_) => continue,
         };
 
-        let did = app.encode_did(&action.did).await?;
-        let (did_hi, did_lo) = RecordId::split_did(did);
-        let source = RecordId {
-            rkey: app.encode_rkey(&action.rkey)?,
-            collection: app.encode_collection("app.bsky.feed.like")?.into(),
-            did_hi: did_hi.into(),
-            did_lo: did_lo.into(),
-        };
+        let source = RecordId::new(
+            app.encode_did(&action.did).await?,
+            app.encode_collection("app.bsky.feed.like")?,
+            app.encode_rkey(&action.rkey)?,
+        );
         let source_display = format!("at://{}/app.bsky.feed.like/{}", &action.did, &action.rkey);
         let target = RecordId::from_at_uri(app, &action.uri).await?;
         storage.write_backlink(&target, &source)?;

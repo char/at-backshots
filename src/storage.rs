@@ -52,8 +52,8 @@ pub struct IndexEntry {
     // _pad: Padding<16>,
 }
 const INDEX_ENTRY_SIZE: usize = std::mem::size_of::<IndexEntry>();
-// assert IndexEntry is 40 bytes
-const _: [(); 40] = [(); INDEX_ENTRY_SIZE];
+// assert IndexEntry is 32 bytes
+const _: [(); 32] = [(); INDEX_ENTRY_SIZE];
 
 #[derive(Debug, Clone, Copy, KnownLayout, IntoBytes, FromBytes, Immutable)]
 #[repr(C, packed)]
@@ -71,8 +71,8 @@ pub struct BacklinkEntry {
     pub prev: I32<BigEndian>,
 }
 const BACKLINK_ENTRY_SIZE: usize = std::mem::size_of::<BacklinkEntry>();
-// assert BacklinkEntry is 32 bytes
-const _: [(); 32] = [(); BACKLINK_ENTRY_SIZE];
+// assert BacklinkEntry is 24 bytes
+const _: [(); 24] = [(); BACKLINK_ENTRY_SIZE];
 
 pub struct BacklinkStorage {
     index_btree: BTreeMap<RecordId, IndexValue>,

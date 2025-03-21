@@ -11,6 +11,7 @@ pub mod http;
 pub mod ingest;
 pub mod lexicons;
 pub mod storage;
+pub mod tid;
 pub mod web;
 pub mod zplc_client;
 
@@ -39,7 +40,7 @@ impl AppState {
         db.execute(
             "CREATE TABLE IF NOT EXISTS outline_rkeys (
             id INTEGER PRIMARY KEY,
-            rkey TEXT NOT NULL
+            rkey TEXT UNIQUE NOT NULL
         ) STRICT",
             (),
         )?;

@@ -19,13 +19,11 @@ pub async fn handle_backlinks(
         return Ok(());
     }
 
-    let (src_did_hi, src_did_lo) = RecordId::split_did(app.encode_did(repo).await?);
-    let source = RecordId {
-        did_hi: src_did_hi.into(),
-        did_lo: src_did_lo.into(),
-        collection: app.encode_collection(collection)?.into(),
-        rkey: app.encode_rkey(rkey)?,
-    };
+    let source = RecordId::new(
+        app.encode_did(repo).await?,
+        app.encode_collection(collection)?,
+        app.encode_rkey(rkey)?,
+    );
 
     let source_display = format!("at://{repo}/{collection}/{rkey}");
 
@@ -45,14 +43,11 @@ pub async fn handle_backlinks(
             collection: &str,
             rkey: &str,
         ) -> Result<RecordId> {
-            let did = app.encode_did(repo).await?;
-            let (did_hi, did_lo) = RecordId::split_did(did);
-            Ok(RecordId {
-                did_hi: did_hi.into(),
-                did_lo: did_lo.into(),
-                collection: app.encode_collection(collection)?.into(),
-                rkey: app.encode_rkey(rkey)?,
-            })
+            Ok(RecordId::new(
+                app.encode_did(repo).await?,
+                app.encode_collection(collection)?,
+                app.encode_rkey(rkey)?,
+            ))
         }
 
         match create_record_id(app, target_repo, target_collection, target_rkey).await {

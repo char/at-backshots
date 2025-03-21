@@ -20,4 +20,4 @@ don't run this just yet!
   - rkeys at or under 13 chars are inlined, otherwise stored in a table
   - we store data in a big tangle of linked lists in a flatfile, there is no extra indexing
     - data grows linearly with number of backlinks
-    - a backlink source takes up 32 bytes and a backlink target takes up 40 bytes
+    - a backlink source takes up 24 bytes and a backlink target takes up 32 bytes
