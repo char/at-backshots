@@ -61,8 +61,7 @@ pub async fn handle_backlinks(
 
                 // TODO: we probably shouldnt block the runtime like this but whatever
                 storage.write_backlink(&target, &source)?;
-
-                app.incr_backlink_count(1)?;
+                app.incr_backlink_count(&app.db(), 1)?;
             }
             Err(e) => tracing::warn!("failed to create RecordId: {:?}", e),
         };

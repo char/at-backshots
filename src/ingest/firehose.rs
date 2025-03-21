@@ -23,21 +23,20 @@ pub async fn ingest_firehose(
     port: u16,
     tls: bool,
 ) -> Result<()> {
-    let cursor_path = format!("firehose_cursor/{domain}:{port}");
-    // let _ = app.db.remove(&cursor_path)?;
-
     'reconnect: loop {
-        let last_cursor = app.db.get(&cursor_path)?.map(|v| {
-            let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&v[0..8]);
-            u64::from_le_bytes(bytes)
-        });
+        let cursor = {
+            app.db()
+                .query_row(
+                    "SELECT count FROM counts WHERE key = 'firehose_cursor'",
+                    (),
+                    |row| row.get::<_, u64>(0),
+                )
+                .ok()
+        };
 
         let firehose_path = format!(
             "/xrpc/com.atproto.sync.subscribeRepos{}",
-            last_cursor
-                .map(|c| format!("?cursor={c}"))
-                .unwrap_or_default()
+            cursor.map(|c| format!("?cursor={c}")).unwrap_or_default()
         );
 
         tracing::info!(%domain, "connecting to ingest…");
@@ -102,8 +101,12 @@ async fn handle_event(app: &AppState, storage: &mut BacklinkStorage, event: Byte
         Some("#commit") => {
             let commit = serde_ipld_dagcbor::from_slice::<SubscribeReposCommit>(payload_buf)?;
 
-            let new_cursor = (commit.sequence as u64).to_le_bytes();
-            app.db.insert(b"firehose_cursor", &new_cursor)?;
+            {
+                app.db().execute(
+                    "INSERT OR REPLACE INTO COUNTS (key, count) VALUES ('firehose_cursor', ?)",
+                    [commit.sequence as u64],
+                )?;
+            }
 
             let mut cursor = Cursor::new(commit.blocks);
             let reader = &mut cursor;

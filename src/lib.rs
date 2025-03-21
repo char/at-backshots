@@ -1,5 +1,7 @@
+use std::sync::{Mutex, MutexGuard};
 
 use anyhow::Result;
+use rusqlite::Connection;
 
 pub mod car;
 pub mod mst;
@@ -15,70 +17,62 @@ pub mod zplc_client;
 pub struct AppState {
     pub zplc_server: String,
 
-    pub db: sled::Db,
-    pub db_rkeys: sled::Tree,
-    pub db_collections: sled::Tree,
-    pub db_collections_reverse: sled::Tree,
-    pub db_dids: sled::Tree,
-    pub db_dids_reverse: sled::Tree,
+    db: Mutex<rusqlite::Connection>,
 }
 
 impl AppState {
     pub fn new(zplc_server: String) -> Result<Self> {
-        let db = sled::Config::default()
-            .path("./data/db")
-            .cache_capacity(1024 * 1024 * 1024)
-            .mode(sled::Mode::LowSpace)
-            .use_compression(true)
-            .compression_factor(18)
-            .open()?;
-
-        let db_rkeys = db.open_tree(b"rkeys")?;
-        let db_collections = db.open_tree(b"coll")?;
-        let db_collections_reverse = db.open_tree(b"coll_r")?;
-
-        let db_dids = db.open_tree(b"dids")?;
-        let db_dids_reverse = db.open_tree(b"dids_r")?;
+        let _ = std::fs::create_dir_all("./data");
+        let db = Connection::open("./data/db.db")?;
+        db.pragma_update(None, "journal_mode", "WAL")?;
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS counts (
+            key TEXT NOT NULL PRIMARY KEY UNIQUE,
+            count INTEGER NOT NULL
+        ) STRICT",
+            (),
+        )?;
+        db.execute(
+            "INSERT OR IGNORE INTO counts (key, count) VALUES ('backlinks', 0)",
+            (),
+        )?;
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS outline_rkeys (
+            id INTEGER PRIMARY KEY,
+            rkey TEXT NOT NULL
+        ) STRICT",
+            (),
+        )?;
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS outline_dids (
+            id INTEGER PRIMARY KEY,
+            did TEXT UNIQUE NOT NULL
+        ) STRICT",
+            (),
+        )?;
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS collections (
+            id INTEGER PRIMARY KEY,
+            collection TEXT UNIQUE NOT NULL
+        ) STRICT",
+            (),
+        )?;
 
         Ok(Self {
             zplc_server,
-
-            db,
-
-            db_rkeys,
-            db_collections,
-            db_collections_reverse,
-
-            db_dids,
-            db_dids_reverse,
+            db: Mutex::new(db),
         })
     }
 
-    pub fn fetch_backlink_count(&self) -> Result<u64> {
-        Ok(self
-            .db
-            .get(b"backlinks_cnt")?
-            .map(ivec_to_u64)
-            .unwrap_or_default())
+    pub fn db(&self) -> MutexGuard<'_, Connection> {
+        self.db.try_lock().unwrap()
     }
 
-    pub fn incr_backlink_count(&self, n: u64) -> Result<()> {
-        let txn_result: Result<_, sled::transaction::TransactionError> =
-            self.db.transaction(|tx| {
-                let count = tx
-                    .get(b"backlinks_cnt")?
-                    .map(ivec_to_u64)
-                    .unwrap_or_default();
-                tx.insert(b"backlinks_cnt", &(count + n).to_be_bytes())?;
-                Ok(())
-            });
-        txn_result?;
+    pub fn incr_backlink_count(&self, db: &MutexGuard<'_, Connection>, n: u64) -> Result<()> {
+        db.execute(
+            "UPDATE counts SET count = count + ? WHERE key = 'backlinks'",
+            [n],
+        )?;
         Ok(())
     }
-}
-
-fn ivec_to_u64(v: sled::IVec) -> u64 {
-    let mut bytes = [0u8; 8];
-    bytes.copy_from_slice(&v);
-    u64::from_be_bytes(bytes)
 }

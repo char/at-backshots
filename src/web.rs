@@ -1,7 +1,4 @@
-use std::{
-    net::SocketAddr,
-    sync::Arc,
-};
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
 use hyper::{body::Incoming, header, server::conn::http1, Method, Request, Response, StatusCode};
@@ -22,21 +19,31 @@ async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Bo
             .header(header::CONTENT_TYPE, "text/plain")
             .body(body_full("backshots running..."))?),
 
-        (&Method::GET, "/xrpc/_status") => Ok(Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/plain")
-            .body(body_full(format!(
-                r#"status:
+        (&Method::GET, "/xrpc/_status") => {
+            let db = app.db();
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "text/plain")
+                .body(body_full(format!(
+                    r#"status:
 collections: {}
 backlinks: {} (targets: {})
 outline rkeys: {}
 non-zplc dids: {}"#,
-                app.db_collections.len(),
-                app.fetch_backlink_count()?,
-                0, // TODO: read targets count from backlink storage
-                app.db_rkeys.len(),
-                app.db_dids.len(),
-            )))?),
+                    db.query_row("SELECT COUNT(id) FROM collections", (), |row| row
+                        .get::<_, u64>(0))?,
+                    db.query_row(
+                        "SELECT count FROM counts WHERE key = 'backlinks'",
+                        (),
+                        |row| row.get::<_, u64>(0),
+                    )?,
+                    0, // TODO: read targets count from backlink storage
+                    db.query_row("SELECT COUNT(id) FROM outline_rkeys", (), |row| row
+                        .get::<_, u64>(0))?,
+                    db.query_row("SELECT COUNT(id) FROM outline_dids", (), |row| row
+                        .get::<_, u64>(0))?,
+                )))?)
+        }
 
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)

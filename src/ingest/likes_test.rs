@@ -70,7 +70,7 @@ pub async fn ingest_json(app: &AppState, mut storage: BacklinkStorage) -> Result
         let source_display = format!("at://{}/app.bsky.feed.like/{}", &action.did, &action.rkey);
         let target = RecordId::from_at_uri(app, &action.uri).await?;
         storage.write_backlink(&target, &source)?;
-        app.incr_backlink_count(1)?;
+        app.incr_backlink_count(&app.db(), 1)?;
         tracing::debug!(from = source_display, to = action.uri, "backlink");
     }
     Ok(())

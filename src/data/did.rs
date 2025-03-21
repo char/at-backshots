@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::AppState;
 
@@ -15,12 +15,13 @@ impl AppState {
         if did & DID_FLAG_NON_STANDARD == 0 {
             return self.zplc_to_did(did).await;
         }
-
-        let did = self
-            .db_dids
-            .get(did.to_be_bytes())?
-            .context(format!("DID {} was not found in dids tree", did))?;
-        Ok(String::from_utf8(did.to_vec())?)
+        let did: String = {
+            self.db()
+                .query_row("SELECT did FROM outline_dids WHERE id = ?", [did], |row| {
+                    row.get(0)
+                })
+        }?;
+        Ok(did)
     }
 
     pub async fn encode_did(&self, did: &str) -> Result<Did> {
@@ -35,29 +36,19 @@ impl AppState {
 
     /// encodes a did but doesn't look up a zplc
     pub fn encode_did_sync(&self, did: &str) -> Result<Did> {
-        if let Some(did) = self.db_dids_reverse.get(did)? {
-            let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&did[0..8]);
-            let did = u64::from_be_bytes(bytes);
-            return Ok(did);
-        }
-
-        let counter: Result<_, sled::transaction::TransactionError> =
-            self.db_dids_reverse.transaction(|tx| {
-                let counter = if let Some(counter) = tx.get([])? {
-                    let mut bytes = [0u8; 8];
-                    bytes.copy_from_slice(&counter[0..8]);
-                    u64::from_be_bytes(bytes) + 1
-                } else {
-                    DID_FLAG_NON_STANDARD
-                };
-                tx.insert(&[], &counter.to_be_bytes())?;
-                Ok(counter)
-            });
-
-        let counter = counter?;
-        self.db_dids.insert(counter.to_be_bytes(), did)?;
-        self.db_dids_reverse.insert(did, &counter.to_be_bytes())?;
-        Ok(counter)
+        let did: u64 = {
+            let db = self.db();
+            match db.query_row("SELECT id FROM outline_dids WHERE did = ?", [did], |row| {
+                row.get::<_, u64>(0)
+            }) {
+                Ok(did) => Ok(did),
+                Err(rusqlite::Error::QueryReturnedNoRows) => {
+                    db.execute("INSERT OR IGNORE INTO outline_dids (did) VALUES (?)", [did])?;
+                    Ok(db.last_insert_rowid() as u64)
+                }
+                Err(e) => Err(e),
+            }
+        }?;
+        Ok(did)
     }
 }

@@ -13,10 +13,7 @@ pub async fn main() -> anyhow::Result<()> {
     let app = Arc::new(AppState::new("http://127.0.0.1:2485".into())?);
 
     let storage = BacklinkStorage::new("./data/")?;
-    match ingest_json(&app, storage).await {
-        Ok(_) => {}
-        Err(e) => tracing::error!("ingest error: {:?}", e),
-    }
+    ingest_json(&app, storage).await?;
 
     Ok(())
 }
