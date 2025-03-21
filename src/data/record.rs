@@ -18,10 +18,10 @@ pub const RKEY_DB_MASK: u64 = !RKEY_FLAG_NOT_TID;
 #[repr(C, packed)]
 pub struct RecordId {
     pub rkey: u64,
-    pub did_hi: u16,
-    pub did_lo: u32,
     // u16::MAX signals that we need extended data
     pub collection: u16,
+    pub did_hi: u16,
+    pub did_lo: u32,
 }
 
 impl RecordId {
