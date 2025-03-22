@@ -58,9 +58,10 @@ impl RecordId {
 }
 
 impl std::fmt::Debug for RecordId {
+    // we do a useless from() because otherwise we have refs to unaligned fields
+    #[allow(clippy::useless_conversion)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RecordId")
-            // looks weird because ref to unaligned field
             .field("rkey", &u64::from(self.rkey))
             .field("collection", &u16::from(self.collection))
             .field("did", &self.did())
