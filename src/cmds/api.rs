@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     net::SocketAddr,
     sync::Arc,
 };
@@ -76,7 +76,7 @@ non-zplc dids: {}"#,
 
             let mut storage = LiveStorageWriter::new("/dev/shm/backshots/data")?;
 
-            let mut backlinks = HashSet::<String>::new();
+            let mut backlinks = BTreeSet::<String>::new();
             for link in storage.read_backlinks(&record_id)? {
                 let did = app.resolve_did(link.source.did).await?;
                 let collection = app.resolve_collection(link.source.collection)?;
