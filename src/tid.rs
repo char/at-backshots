@@ -7,20 +7,11 @@ const S32_CHAR: &str = "234567abcdefghijklmnopqrstuvwxyz";
 const fn _s32_map() -> [u8; 256] {
     let mut map = [255u8; 256];
     let mut i = 0u8;
-
-    macro_rules! chr {
-        ($c: expr) => {
-            map[$c as usize] = i; i += 1;
-        };
+    let charset = b"234567abcdefghijklmnopqrstuvwxyz";
+    while i < 32 {
+        map[charset[i as usize] as usize] = i;
+        i += 1;
     }
-
-    chr!(b'2'); chr!(b'3'); chr!(b'4'); chr!(b'5'); chr!(b'6'); chr!(b'7');
-    chr!(b'a'); chr!(b'b'); chr!(b'c'); chr!(b'd'); chr!(b'e'); chr!(b'f');
-    chr!(b'g'); chr!(b'h'); chr!(b'i'); chr!(b'j'); chr!(b'k'); chr!(b'l');
-    chr!(b'm'); chr!(b'n'); chr!(b'o'); chr!(b'p'); chr!(b'q'); chr!(b'r');
-    chr!(b's'); chr!(b't'); chr!(b'u'); chr!(b'v'); chr!(b'w'); chr!(b'x');
-    chr!(b'y'); chr!(b'z'); let _ = i;
-
     map
 }
 const S32_MAP: [u8; 256] = _s32_map();
@@ -45,4 +36,10 @@ pub fn s32decode(s: &str) -> u64 {
 
 pub fn is_tid(s: &str) -> bool {
     s.len() == TID_LEN && s.bytes().all(|it| S32_MAP[it as usize] != 255)
+}
+
+#[test]
+fn test() {
+    assert_eq!(s32decode(&s32encode(1337)), 1337);
+    assert!(is_tid("3lkzfmkh3es2l"));
 }
