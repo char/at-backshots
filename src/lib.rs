@@ -18,7 +18,6 @@ pub mod ingest;
 pub mod lexicons;
 pub mod storage;
 pub mod tid;
-pub mod web;
 pub mod zplc_client;
 
 pub struct AppState {
