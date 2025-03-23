@@ -308,7 +308,11 @@ impl BacklinkStorage {
     }
 
     pub fn read_backlinks(&mut self, target: &RecordId) -> Result<Vec<BacklinkEntry>> {
-        let index_value = self.find_in_index(target)?;
+        let index_value = match self.find_in_index(target) {
+            Ok(i) => i,
+            Err(e) if e.to_string() == "not found" => return Ok(vec![]),
+            Err(e) => return Err(e),
+        };
 
         let mut links = Vec::new();
         let mut link_idx = index_value.head;

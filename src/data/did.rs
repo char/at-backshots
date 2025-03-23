@@ -24,7 +24,16 @@ impl AppState {
         Ok(did)
     }
 
+    #[inline]
+    pub fn try_encode_did_sync(&self, did: &str) -> Option<Did> {
+        crate::zplc_client::ZPLC_CACHE.with_borrow(|cache| cache.get(did).cloned())
+    }
+
     pub async fn encode_did(&self, did: &str) -> Result<Did> {
+        if let Some(cached_value) = self.try_encode_did_sync(did) {
+            return Ok(cached_value);
+        }
+
         if did.starts_with("did:plc:") {
             if let Ok(Some(zplc)) = self.lookup_zplc(did).await {
                 return Ok(zplc);

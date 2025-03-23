@@ -37,26 +37,48 @@ pub async fn handle_backlinks(
         };
 
         // my kingdom for a try block
+        #[inline]
         async fn create_record_id(
             app: &AppState,
-            repo: &str,
+            did: &str,
             collection: &str,
             rkey: &str,
         ) -> Result<RecordId> {
             Ok(RecordId::new(
-                app.encode_did(repo).await?,
+                app.encode_did(did).await?,
                 app.encode_collection(collection)?,
                 app.encode_rkey(rkey)?,
             ))
         }
 
-        match create_record_id(app, target_repo, target_collection, target_rkey).await {
+        #[inline]
+        fn try_create_record_id_sync(
+            app: &AppState,
+            did: &str,
+            collection: &str,
+            rkey: &str,
+        ) -> Result<RecordId> {
+            Ok(RecordId::new(
+                app.try_encode_did_sync(did)
+                    .ok_or_else(|| anyhow::anyhow!("cant encode did"))?,
+                app.encode_collection(collection)?,
+                app.encode_rkey(rkey)?,
+            ))
+        }
+
+        let record_id =
+            match try_create_record_id_sync(app, target_repo, target_collection, target_rkey) {
+                Ok(target) => Ok(target),
+                Err(_) => create_record_id(app, repo, collection, rkey).await,
+            };
+
+        match record_id {
             Ok(target) => {
                 tracing::debug!(from = source_display, to = uri, "backlink");
 
                 // TODO: we probably shouldnt block the runtime like this but whatever
                 storage.write_backlink(&target, &source)?;
-                app.incr_backlink_count(&app.db(), 1)?;
+                app.incr_backlink_count(1)?;
             }
             Err(e) => tracing::warn!("failed to create RecordId: {:?}", e),
         };

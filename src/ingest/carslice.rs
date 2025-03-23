@@ -28,6 +28,7 @@ pub async fn handle_carslice<R: AsyncRead + AsyncSeek + Unpin>(
                 continue;
             }
         };
+
         let ipld = serde_ipld_dagcbor::from_slice::<Ipld>(&cbor)?;
 
         let mut backlinks = HashSet::<(&str, &str)>::new();
@@ -46,6 +47,8 @@ pub async fn handle_carslice<R: AsyncRead + AsyncSeek + Unpin>(
 
         handle_backlinks(app, storage, &repo, collection, rkey, backlinks).await?;
     }
+
+    app.flush_backlink_count(&app.db())?;
 
     Ok(())
 }

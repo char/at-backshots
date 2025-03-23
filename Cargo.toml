@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = "1.0.97"
 bytes = { version = "1.10.1", features = ["serde"] }
 chrono = { version = "0.4.40", default-features = false, features = ["serde", "std"] }
+form_urlencoded = "1.2.1"
 futures-util = "0.3.31"
 http-body-util = { version = "0.1.3", features = ["full"] }
 hyper = { version = "1.6.0", features = ["full"] }
@@ -39,3 +40,11 @@ path = "src/cmds/firehose_ingest.rs"
 [[bin]]
 name = "json-ingest"
 path = "src/cmds/json_ingest.rs"
+
+[[bin]]
+name = "repo-ingest"
+path = "src/cmds/repo_ingest.rs"
+
+[[bin]]
+name = "growth-rate-counter"
+path = "src/cmds/growth_rate_counter.rs"

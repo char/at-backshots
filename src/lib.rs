@@ -1,6 +1,9 @@
 use std::{
     path::Path,
-    sync::{Mutex, MutexGuard},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex, MutexGuard,
+    },
 };
 
 use anyhow::Result;
@@ -21,6 +24,7 @@ pub mod zplc_client;
 pub struct AppState {
     pub zplc_server: String,
 
+    backlink_incr: AtomicU64,
     db: Mutex<rusqlite::Connection>,
 }
 
@@ -64,18 +68,25 @@ impl AppState {
 
         Ok(Self {
             zplc_server,
+            backlink_incr: AtomicU64::new(0),
             db: Mutex::new(db),
         })
     }
 
     pub fn db(&self) -> MutexGuard<'_, Connection> {
-        self.db.try_lock().unwrap()
+        self.db.lock().unwrap()
     }
 
-    pub fn incr_backlink_count(&self, db: &MutexGuard<'_, Connection>, n: u64) -> Result<()> {
+    pub fn incr_backlink_count(&self, n: u64) -> Result<()> {
+        self.backlink_incr.fetch_add(n, Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub fn flush_backlink_count(&self, db: &Connection) -> Result<()> {
+        let count_incr = self.backlink_incr.swap(0, Ordering::Relaxed);
         db.execute(
             "UPDATE counts SET count = count + ? WHERE key = 'backlinks'",
-            [n],
+            [count_incr],
         )?;
         Ok(())
     }

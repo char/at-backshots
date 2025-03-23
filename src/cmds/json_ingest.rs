@@ -3,11 +3,15 @@ use std::sync::Arc;
 use backshots::{ingest::likes_test::ingest_json, storage::BacklinkStorage, AppState};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().compact())
-        .with("backshots=debug".parse::<EnvFilter>().unwrap())
+        .with(
+            "json_ingest=debug,backshots=debug,backshots::ingest=info"
+                .parse::<EnvFilter>()
+                .unwrap(),
+        )
         .init();
 
     let app = Arc::new(AppState::new(

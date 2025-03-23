@@ -52,6 +52,8 @@ pub async fn ingest_json(app: &AppState, mut storage: BacklinkStorage) -> Result
     let f = tokio::fs::File::open("./target/likes5-simple.jsonl").await?;
     let reader = BufReader::new(f);
     let mut lines = reader.lines();
+
+    let mut line_count = 0;
     while let Some(line) = lines.next_line().await? {
         let action: Action = line.parse()?;
         let action = match action {
@@ -67,8 +69,16 @@ pub async fn ingest_json(app: &AppState, mut storage: BacklinkStorage) -> Result
         let source_display = format!("at://{}/app.bsky.feed.like/{}", &action.did, &action.rkey);
         let target = RecordId::from_at_uri(app, &action.uri).await?;
         storage.write_backlink(&target, &source)?;
-        app.incr_backlink_count(&app.db(), 1)?;
+        app.incr_backlink_count(1)?;
+
+        if line_count % 4096 == 0 {
+            app.flush_backlink_count(&app.db())?;
+        }
+
+        line_count += 1;
         tracing::debug!(from = source_display, to = action.uri, "backlink");
     }
+
+    app.flush_backlink_count(&app.db())?;
     Ok(())
 }

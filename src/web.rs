@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use anyhow::Result;
 use hyper::{body::Incoming, header, server::conn::http1, Method, Request, Response, StatusCode};
@@ -6,11 +10,13 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
 use crate::{
+    data::record::RecordId,
     http::{body_full, Body},
+    storage::BacklinkStorage,
     AppState,
 };
 
-async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Body>> {
+async fn get_response(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Body>> {
     let path = req.uri().path();
 
     match (req.method(), path) {
@@ -19,7 +25,7 @@ async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Bo
             .header(header::CONTENT_TYPE, "text/plain")
             .body(body_full("backshots running..."))?),
 
-        (&Method::GET, "/xrpc/_status") => {
+        (&Method::GET, "/status") => {
             let db = app.db();
             Ok(Response::builder()
                 .status(StatusCode::OK)
@@ -45,10 +51,65 @@ non-zplc dids: {}"#,
                 )))?)
         }
 
+        (&Method::GET, "/links") => {
+            let q: HashMap<_, _> = req
+                .uri()
+                .query()
+                .map(|v| form_urlencoded::parse(v.as_bytes()).collect())
+                .unwrap_or_default();
+
+            let Some(at_uri) = q.get("uri") else {
+                return Ok(Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(body_full("'uri' param missing"))?);
+            };
+
+            let Ok(record_id) = RecordId::from_at_uri(&app, at_uri).await else {
+                return Ok(Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(body_full("'uri' param was not a valid at-uri"))?);
+            };
+
+            let mut storage = BacklinkStorage::new("/dev/shm/backshots/data")?;
+
+            let mut backlinks = HashSet::<String>::new();
+            for link in storage.read_backlinks(&record_id)? {
+                let did = app.resolve_did(link.source.did()).await?;
+                let collection = app.resolve_collection(link.source.collection as u32)?;
+                let rkey = app.resolve_rkey(link.source.rkey)?;
+                backlinks.insert(format!("at://{did}/{collection}/{rkey}"));
+            }
+
+            Ok(Response::builder()
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(body_full(
+                    tinyjson::JsonValue::Array(
+                        backlinks
+                            .into_iter()
+                            .map(tinyjson::JsonValue::String)
+                            .collect::<Vec<_>>(),
+                    )
+                    .stringify()?,
+                ))?)
+        }
+
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
             .header(header::CONTENT_TYPE, "text/plain")
             .body(body_full("Not Found"))?),
+    }
+}
+
+async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Body>> {
+    match get_response(app, req).await {
+        Ok(res) => Ok(res),
+        Err(err) => {
+            tracing::error!("error handling request: {err:?}");
+            Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header(header::CONTENT_TYPE, "text/plain")
+                .body(body_full("Internal Server Error"))?)
+        }
     }
 }
 

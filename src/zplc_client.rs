@@ -1,8 +1,14 @@
+use std::{cell::RefCell, collections::HashMap};
+
 use anyhow::Result;
 use http_body_util::BodyExt;
 use hyper::{Request, StatusCode};
 
 use crate::{http::body_empty, http::client::fetch, AppState};
+
+thread_local! {
+    pub static ZPLC_CACHE: RefCell<HashMap<String, u64>> = Default::default();
+}
 
 impl AppState {
     pub async fn zplc_to_did(&self, id: u64) -> Result<String> {
@@ -35,6 +41,7 @@ impl AppState {
         let body = res.collect().await?.to_bytes();
         let zplc_str = String::from_utf8(body.to_vec())?;
         let zplc_n: u64 = zplc_str.parse()?;
+        ZPLC_CACHE.with_borrow_mut(|cache| cache.insert(did.into(), zplc_n));
         Ok(Some(zplc_n))
     }
 }

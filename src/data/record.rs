@@ -1,3 +1,5 @@
+use std::{cell::RefCell, collections::HashMap};
+
 use anyhow::{Context, Result};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -69,6 +71,10 @@ impl std::fmt::Debug for RecordId {
     }
 }
 
+thread_local! {
+    pub static COLL_CACHE: RefCell<HashMap<String, u32>> = Default::default();
+}
+
 impl AppState {
     pub fn resolve_rkey(&self, rkey_id: u64) -> Result<String> {
         if rkey_id & RKEY_FLAG_NOT_TID == 0 {
@@ -121,6 +127,10 @@ impl AppState {
     }
 
     pub fn encode_collection(&self, collection: &str) -> Result<RecordCollection> {
+        if let Some(c) = COLL_CACHE.with_borrow(|cache| cache.get(collection).cloned()) {
+            return Ok(c);
+        }
+
         let id: u32 = {
             let db = self.db();
 
@@ -140,6 +150,9 @@ impl AppState {
                 Err(e) => Err(e),
             }
         }?;
+
+        COLL_CACHE.with_borrow_mut(|cache| cache.insert(collection.into(), id));
+
         Ok(id)
     }
 }
