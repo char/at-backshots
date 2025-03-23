@@ -10,7 +10,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use crate::{
     car::read_car_v1,
     lexicons::{StreamEventHeader, SubscribeReposCommit, SubscribeReposInfo},
-    storage::BacklinkStorage,
+    storage::live_writer::LiveStorageWriter,
     AppState,
 };
 
@@ -18,7 +18,7 @@ use super::carslice::handle_carslice;
 
 pub async fn ingest_firehose(
     app: &AppState,
-    mut storage: BacklinkStorage,
+    mut storage: LiveStorageWriter,
     domain: &str,
     port: u16,
     tls: bool,
@@ -87,7 +87,7 @@ pub async fn ingest_firehose(
     Ok(())
 }
 
-async fn handle_event(app: &AppState, storage: &mut BacklinkStorage, event: Bytes) -> Result<()> {
+async fn handle_event(app: &AppState, storage: &mut LiveStorageWriter, event: Bytes) -> Result<()> {
     let buf: &[u8] = &event;
     let mut cursor = Cursor::new(buf);
     let (header_buf, payload_buf) = match serde_ipld_dagcbor::from_reader::<Ipld, _>(&mut cursor) {

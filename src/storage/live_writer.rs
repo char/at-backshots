@@ -61,7 +61,7 @@ const BACKLINK_ENTRY_SIZE: usize = std::mem::size_of::<BacklinkEntry>();
 // assert BacklinkEntry is 32 bytes
 const _: [(); 32] = [(); BACKLINK_ENTRY_SIZE];
 
-pub struct BacklinkStorage {
+pub struct LiveStorageWriter {
     index_btree: BTreeMap<RecordId, IndexValue>,
     index_file: File,        // create, write, read
     index_file_append: File, // append
@@ -88,7 +88,7 @@ fn pwrite_all(fd: impl AsFd, buf: &[u8], offset: usize) -> Result<()> {
     Ok(())
 }
 
-impl BacklinkStorage {
+impl LiveStorageWriter {
     pub fn new(dir: impl AsRef<Path>) -> Result<Self> {
         let base_options = File::options()
             .create(true)

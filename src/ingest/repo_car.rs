@@ -1,7 +1,7 @@
 use crate::{
     car::read_car_v1,
     mst::{MSTNode, SignedCommitNode},
-    storage::BacklinkStorage,
+    storage::live_writer::LiveStorageWriter,
     AppState,
 };
 use anyhow::Result;
@@ -13,7 +13,7 @@ use super::carslice::handle_carslice;
 
 pub async fn ingest_repo_archive<R: AsyncRead + AsyncSeek + Unpin>(
     app: &AppState,
-    storage: &mut BacklinkStorage,
+    storage: &mut LiveStorageWriter,
     repo: String,
     reader: &mut R,
 ) -> Result<()> {

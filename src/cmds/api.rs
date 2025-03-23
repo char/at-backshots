@@ -13,7 +13,7 @@ use tokio::net::TcpListener;
 use backshots::{
     data::record::RecordId,
     http::{body_full, Body},
-    storage::BacklinkStorage,
+    storage::live_writer::LiveStorageWriter,
     AppState,
 };
 
@@ -74,7 +74,7 @@ non-zplc dids: {}"#,
                     .body(body_full("'uri' param was not a valid at-uri"))?);
             };
 
-            let mut storage = BacklinkStorage::new("/dev/shm/backshots/data")?;
+            let mut storage = LiveStorageWriter::new("/dev/shm/backshots/data")?;
 
             let mut backlinks = HashSet::<String>::new();
             for link in storage.read_backlinks(&record_id)? {

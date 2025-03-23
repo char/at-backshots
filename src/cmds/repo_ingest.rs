@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use backshots::{ingest::repo_car::ingest_repo_archive, storage::BacklinkStorage, AppState};
+use backshots::{
+    ingest::repo_car::ingest_repo_archive, storage::live_writer::LiveStorageWriter, AppState,
+};
 use tokio::{fs::File, io::AsyncReadExt, time::Instant};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -20,7 +22,7 @@ pub async fn main() -> anyhow::Result<()> {
         "http://127.0.0.1:2485".into(),
     )?);
 
-    let mut storage = BacklinkStorage::new("/dev/shm/backshots/data")?;
+    let mut storage = LiveStorageWriter::new("/dev/shm/backshots/data")?;
     let repo = {
         let mut v = vec![];
         let mut f = File::open("./target/repo-pet.bun.how-2025-03-17T19_47_03.277Z.car").await?;

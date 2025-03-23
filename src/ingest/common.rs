@@ -3,13 +3,13 @@ use std::collections::HashSet;
 
 use crate::{
     data::{at_uri::parse_at_uri, record::RecordId},
-    storage::BacklinkStorage,
+    storage::live_writer::LiveStorageWriter,
     AppState,
 };
 
 pub async fn handle_backlinks(
     app: &AppState,
-    storage: &mut BacklinkStorage,
+    storage: &mut LiveStorageWriter,
     repo: &str,
     collection: &str,
     rkey: &str,

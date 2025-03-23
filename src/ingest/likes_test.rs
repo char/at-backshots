@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use tinyjson::JsonValue;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::{data::record::RecordId, storage::BacklinkStorage, AppState};
+use crate::{data::record::RecordId, storage::live_writer::LiveStorageWriter, AppState};
 
 #[derive(Debug)]
 pub enum Action {
@@ -48,7 +48,7 @@ impl FromStr for Action {
     }
 }
 
-pub async fn ingest_json(app: &AppState, mut storage: BacklinkStorage) -> Result<()> {
+pub async fn ingest_json(app: &AppState, mut storage: LiveStorageWriter) -> Result<()> {
     let f = tokio::fs::File::open("./target/likes5-simple.jsonl").await?;
     let reader = BufReader::new(f);
     let mut lines = reader.lines();

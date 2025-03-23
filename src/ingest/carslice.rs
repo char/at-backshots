@@ -4,13 +4,13 @@ use anyhow::Result;
 use ipld_core::{cid::Cid, ipld::Ipld};
 use tokio::io::{AsyncRead, AsyncSeek};
 
-use crate::{car::CarFile, storage::BacklinkStorage, AppState};
+use crate::{car::CarFile, storage::live_writer::LiveStorageWriter, AppState};
 
 use super::common::handle_backlinks;
 
 pub async fn handle_carslice<R: AsyncRead + AsyncSeek + Unpin>(
     app: &AppState,
-    storage: &mut BacklinkStorage,
+    storage: &mut LiveStorageWriter,
     repo: String,
     reader: &mut R,
     car_file: &CarFile,
