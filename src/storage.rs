@@ -17,21 +17,7 @@ use nix::{
 };
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::data::record::RecordId;
-
-#[derive(Clone, Copy, KnownLayout, IntoBytes, FromBytes)]
-#[repr(C, packed)]
-pub struct Padding<const LEN: usize>(pub [u8; LEN]);
-impl<const LEN: usize> std::fmt::Debug for Padding<LEN> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Padding").finish()
-    }
-}
-impl<const LEN: usize> From<[u8; LEN]> for Padding<LEN> {
-    fn from(value: [u8; LEN]) -> Self {
-        Self(value)
-    }
-}
+use crate::data::{record::RecordId, Padding};
 
 #[derive(Debug, Clone, Copy, KnownLayout, IntoBytes, FromBytes)]
 pub struct IndexHeader {
@@ -46,14 +32,14 @@ const _: [(); 64] = [(); INDEX_HEADER_SIZE];
 #[repr(C, packed)]
 pub struct IndexEntry {
     pub target: RecordId,
+    pub flags: u32,
     // absolute index in backlinks to BacklinkEntry (MAX_VALUE if null)
     pub head: u64,
     pub tail: u64,
-    // _pad: Padding<16>,
 }
 const INDEX_ENTRY_SIZE: usize = std::mem::size_of::<IndexEntry>();
-// assert IndexEntry is 32 bytes
-const _: [(); 32] = [(); INDEX_ENTRY_SIZE];
+// assert IndexEntry is 40 bytes
+const _: [(); 40] = [(); INDEX_ENTRY_SIZE];
 
 #[derive(Debug, Clone, Copy, KnownLayout, IntoBytes, FromBytes, Immutable)]
 #[repr(C, packed)]
@@ -67,12 +53,13 @@ pub struct IndexValue {
 #[repr(C, packed)]
 pub struct BacklinkEntry {
     pub source: RecordId,
+    pub flags: u32,
     pub next: i32, // relative offset in backlinks to BacklinkEntry (0 if null)
     pub prev: i32,
 }
 const BACKLINK_ENTRY_SIZE: usize = std::mem::size_of::<BacklinkEntry>();
-// assert BacklinkEntry is 24 bytes
-const _: [(); 24] = [(); BACKLINK_ENTRY_SIZE];
+// assert BacklinkEntry is 32 bytes
+const _: [(); 32] = [(); BACKLINK_ENTRY_SIZE];
 
 pub struct BacklinkStorage {
     index_btree: BTreeMap<RecordId, IndexValue>,
@@ -183,6 +170,7 @@ impl BacklinkStorage {
             &mut self.index_file,
             IndexEntry {
                 target: *target,
+                flags: 0,
                 head: index_value.head,
                 tail: index_value.tail,
             }
@@ -197,6 +185,7 @@ impl BacklinkStorage {
         self.index_file_append.write_all(
             IndexEntry {
                 target: *target,
+                flags: 0,
                 head: index_value.head,
                 tail: index_value.tail,
             }
@@ -209,6 +198,7 @@ impl BacklinkStorage {
     pub fn write_backlink(&mut self, target: &RecordId, source: &RecordId) -> Result<()> {
         let mut new_entry = BacklinkEntry {
             source: *source,
+            flags: 0,
             next: 0,
             prev: 0,
         };
@@ -235,8 +225,6 @@ impl BacklinkStorage {
         let new_entry_pos = usize::try_from(new_entry_idx).unwrap() * BACKLINK_ENTRY_SIZE;
 
         if let Ok(mut index_value) = self.find_in_index(target) {
-            let index_entry_idx = usize::try_from(index_value.idx).unwrap();
-
             if index_value.head == u64::MAX {
                 index_value.head = new_entry_idx;
             }
@@ -278,16 +266,6 @@ impl BacklinkStorage {
             // update the index entry on disk
             index_value.tail = new_entry_idx;
             self.update_index(target, index_value)?;
-            pwrite_all(
-                &mut self.index_file,
-                IndexEntry {
-                    target: *target,
-                    head: index_value.head,
-                    tail: index_value.tail,
-                }
-                .as_mut_bytes(),
-                INDEX_HEADER_SIZE + index_entry_idx * INDEX_ENTRY_SIZE,
-            )?;
         } else {
             pwrite_all(
                 &mut self.links_file,

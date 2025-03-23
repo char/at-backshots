@@ -8,7 +8,7 @@ use crate::{
     AppState,
 };
 
-use super::{at_uri::parse_at_uri, did::Did};
+use super::at_uri::parse_at_uri;
 
 // this is just an index into the collections table
 pub type RecordCollection = u32;
@@ -21,29 +21,16 @@ pub const RKEY_DB_MASK: u64 = !RKEY_FLAG_NOT_TID;
 pub struct RecordId {
     pub rkey: u64,
     // u16::MAX signals that we need extended data
-    pub collection: u16,
-    pub did_hi: u16,
-    pub did_lo: u32,
+    pub collection: u32,
+    pub did: u64,
 }
 
 impl RecordId {
-    pub fn did(&self) -> Did {
-        ((self.did_hi as u64) << 32) | self.did_lo as u64
-    }
-    pub fn split_did(did: Did) -> (u16, u32) {
-        (
-            (((did >> 32) & u16::MAX as u64) as u16),
-            ((did & u32::MAX as u64) as u32),
-        )
-    }
-
     pub fn new(did: u64, collection: u32, rkey: u64) -> Self {
-        let (did_hi, did_lo) = Self::split_did(did);
         Self {
             rkey,
-            collection: collection.try_into().unwrap_or(u16::MAX),
-            did_hi,
-            did_lo,
+            collection,
+            did,
         }
     }
 }
@@ -65,8 +52,8 @@ impl std::fmt::Debug for RecordId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RecordId")
             .field("rkey", &u64::from(self.rkey))
-            .field("collection", &u16::from(self.collection))
-            .field("did", &self.did())
+            .field("collection", &u32::from(self.collection))
+            .field("did", &u64::from(self.did))
             .finish()
     }
 }

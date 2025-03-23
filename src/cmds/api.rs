@@ -78,8 +78,8 @@ non-zplc dids: {}"#,
 
             let mut backlinks = HashSet::<String>::new();
             for link in storage.read_backlinks(&record_id)? {
-                let did = app.resolve_did(link.source.did()).await?;
-                let collection = app.resolve_collection(link.source.collection as u32)?;
+                let did = app.resolve_did(link.source.did).await?;
+                let collection = app.resolve_collection(link.source.collection)?;
                 let rkey = app.resolve_rkey(link.source.rkey)?;
                 backlinks.insert(format!("at://{did}/{collection}/{rkey}"));
             }
