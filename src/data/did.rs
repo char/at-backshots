@@ -5,10 +5,8 @@ use crate::AppState;
 pub type Did = u64;
 pub const DID_MASK: u64 = 0x0000FFFFFFFFFFFF;
 pub const ZPLC_MASK: u64 = 0x3FFFFFFFFFFF;
-// did:web, and did:plc past 2^46 (≈ 70 trillion)
-pub const DID_FLAG_NON_STANDARD: u64 = 1 << 47;
-// we use some bits from the Did field to indicate whether a record has been deleted
-pub const DID_FLAG_RECORD_DELETED: u64 = 1 << 46;
+// did:web, and did:plc past 2^48 (≈ 280 trillion)
+pub const DID_FLAG_NON_STANDARD: u64 = 1 << 63;
 
 impl AppState {
     pub async fn resolve_did(&self, did: Did) -> Result<String> {

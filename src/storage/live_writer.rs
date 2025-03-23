@@ -5,24 +5,23 @@ use std::{
     collections::BTreeMap,
     fs::File,
     io::{Seek, SeekFrom, Write},
-    os::fd::{AsFd, AsRawFd},
+    os::fd::AsRawFd,
     path::Path,
 };
 
 use anyhow::Result;
-use nix::{
-    fcntl::{flock, FlockArg},
-    libc::off_t,
-    sys::uio,
-};
+use nix::fcntl::{flock, FlockArg};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::data::{record::RecordId, Padding};
 
+use super::{pread_all, pwrite_all};
+
 #[derive(Debug, Clone, Copy, KnownLayout, IntoBytes, FromBytes)]
 pub struct IndexHeader {
-    pub num_links: u64,
-    _pad: Padding<56>,
+    pub num_records: u64,
+    pub num_idents: u64,
+    _pad: Padding<48>,
 }
 const INDEX_HEADER_SIZE: usize = std::mem::size_of::<IndexHeader>();
 // assert IndexHeader is 64 bytes
@@ -30,14 +29,14 @@ const _: [(); 64] = [(); INDEX_HEADER_SIZE];
 
 #[derive(Debug, Clone, Copy, KnownLayout, IntoBytes, FromBytes)]
 #[repr(C, packed)]
-pub struct IndexEntry {
+pub struct RecordIndexEntry {
     pub target: RecordId,
     pub flags: u32,
     // absolute index in backlinks to BacklinkEntry (MAX_VALUE if null)
     pub head: u64,
     pub tail: u64,
 }
-const INDEX_ENTRY_SIZE: usize = std::mem::size_of::<IndexEntry>();
+const INDEX_ENTRY_SIZE: usize = std::mem::size_of::<RecordIndexEntry>();
 // assert IndexEntry is 40 bytes
 const _: [(); 40] = [(); INDEX_ENTRY_SIZE];
 
@@ -68,26 +67,6 @@ pub struct LiveStorageWriter {
     links_file: File,        // create, write, read
 }
 
-fn pread_all(fd: impl AsFd, buf: &mut [u8], offset: usize) -> Result<()> {
-    let mut read = 0;
-    while read < buf.len() {
-        let res = uio::pread(fd.as_fd(), &mut buf[read..], (offset + read) as off_t)?;
-        read += res;
-        if res == 0 {
-            anyhow::bail!("no data to read");
-        }
-    }
-    Ok(())
-}
-
-fn pwrite_all(fd: impl AsFd, buf: &[u8], offset: usize) -> Result<()> {
-    let mut written = 0;
-    while written < buf.len() {
-        written += uio::pwrite(fd.as_fd(), &buf[written..], (offset + written) as off_t)?;
-    }
-    Ok(())
-}
-
 impl LiveStorageWriter {
     pub fn new(dir: impl AsRef<Path>) -> Result<Self> {
         let base_options = File::options()
@@ -109,8 +88,9 @@ impl LiveStorageWriter {
             let mut buf = [0u8; INDEX_HEADER_SIZE];
             if pread_all(&index_file, &mut buf, 0).is_err() {
                 let mut header = IndexHeader {
-                    num_links: 0,
-                    _pad: [0u8; 56].into(),
+                    num_records: 0,
+                    num_idents: 0,
+                    _pad: Default::default(),
                 };
                 pwrite_all(&mut index_file, header.as_mut_bytes(), 0)?;
             }
@@ -137,7 +117,7 @@ impl LiveStorageWriter {
         index_file.seek(SeekFrom::Start(INDEX_HEADER_SIZE as u64))?;
         let mut idx = 0;
         loop {
-            let Ok(entry) = IndexEntry::read_from_io(&mut *index_file) else {
+            let Ok(entry) = RecordIndexEntry::read_from_io(&mut *index_file) else {
                 break;
             };
             map.insert(
@@ -168,7 +148,7 @@ impl LiveStorageWriter {
         self.index_btree.insert(*target, index_value);
         pwrite_all(
             &mut self.index_file,
-            IndexEntry {
+            RecordIndexEntry {
                 target: *target,
                 flags: 0,
                 head: index_value.head,
@@ -183,7 +163,7 @@ impl LiveStorageWriter {
     fn add_to_index(&mut self, target: &RecordId, index_value: IndexValue) -> Result<()> {
         self.index_btree.insert(*target, index_value);
         self.index_file_append.write_all(
-            IndexEntry {
+            RecordIndexEntry {
                 target: *target,
                 flags: 0,
                 head: index_value.head,
@@ -211,8 +191,8 @@ impl LiveStorageWriter {
                 pread_all(&self.index_file, &mut buf, 0)?;
                 zerocopy::transmute!(buf)
             };
-            let cnt = header.num_links;
-            header.num_links += 1;
+            let cnt = header.num_records;
+            header.num_records += 1;
             // allocate empty space at cnt
             let pos = usize::try_from(cnt).unwrap() * BACKLINK_ENTRY_SIZE;
             pwrite_all(&mut self.links_file, &[0u8; BACKLINK_ENTRY_SIZE], pos)?;
