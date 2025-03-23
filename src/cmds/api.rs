@@ -28,6 +28,20 @@ async fn get_response(app: Arc<AppState>, req: Request<Incoming>) -> Result<Resp
 
         (&Method::GET, "/status") => {
             let db = app.db();
+
+            let collection_count: u64 =
+                db.query_row("SELECT COUNT(id) FROM collections", (), |row| row.get(0))?;
+            let backlink_count: u64 = db.query_row(
+                "SELECT count FROM counts WHERE key = 'backlinks'",
+                (),
+                |row| row.get(0),
+            )?;
+            let targets_count: u64 = 0; // TODO: read targets count from backlink storage
+            let rkey_count: u64 =
+                db.query_row("SELECT COUNT(id) FROM outline_rkeys", (), |row| row.get(0))?;
+            let did_count: u64 =
+                db.query_row("SELECT COUNT(id) FROM outline_dids", (), |row| row.get(0))?;
+
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "text/plain")
@@ -37,18 +51,7 @@ collections: {}
 backlinks: {} (targets: {})
 outline rkeys: {}
 non-zplc dids: {}"#,
-                    db.query_row("SELECT COUNT(id) FROM collections", (), |row| row
-                        .get::<_, u64>(0))?,
-                    db.query_row(
-                        "SELECT count FROM counts WHERE key = 'backlinks'",
-                        (),
-                        |row| row.get::<_, u64>(0),
-                    )?,
-                    0, // TODO: read targets count from backlink storage
-                    db.query_row("SELECT COUNT(id) FROM outline_rkeys", (), |row| row
-                        .get::<_, u64>(0))?,
-                    db.query_row("SELECT COUNT(id) FROM outline_dids", (), |row| row
-                        .get::<_, u64>(0))?,
+                    collection_count, backlink_count, targets_count, rkey_count, did_count,
                 )))?)
         }
 
@@ -88,7 +91,7 @@ non-zplc dids: {}"#,
                         backlinks
                             .into_iter()
                             .map(tinyjson::JsonValue::String)
-                            .collect::<Vec<_>>(),
+                            .collect(),
                     )
                     .stringify()?,
                 ))?)
