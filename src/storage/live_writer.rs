@@ -5,6 +5,7 @@ use std::{
     collections::BTreeMap,
     fs::File,
     io::{Seek, SeekFrom, Write},
+    mem::size_of,
     os::fd::AsRawFd,
     path::Path,
 };
@@ -20,10 +21,9 @@ use super::{pread_all, pwrite_all};
 #[derive(Debug, Clone, Copy, KnownLayout, IntoBytes, FromBytes)]
 pub struct IndexHeader {
     pub num_records: u64,
-    pub num_idents: u64,
-    _pad: Padding<48>,
+    _pad: Padding<56>,
 }
-const INDEX_HEADER_SIZE: usize = std::mem::size_of::<IndexHeader>();
+const INDEX_HEADER_SIZE: usize = size_of::<IndexHeader>();
 // assert IndexHeader is 64 bytes
 const _: [(); 64] = [(); INDEX_HEADER_SIZE];
 
@@ -31,12 +31,11 @@ const _: [(); 64] = [(); INDEX_HEADER_SIZE];
 #[repr(C, packed)]
 pub struct RecordIndexEntry {
     pub target: RecordId,
-    pub flags: u32,
     // absolute index in backlinks to BacklinkEntry (MAX_VALUE if null)
     pub head: u64,
     pub tail: u64,
 }
-const INDEX_ENTRY_SIZE: usize = std::mem::size_of::<RecordIndexEntry>();
+const INDEX_ENTRY_SIZE: usize = size_of::<RecordIndexEntry>();
 // assert IndexEntry is 40 bytes
 const _: [(); 40] = [(); INDEX_ENTRY_SIZE];
 
@@ -52,11 +51,10 @@ pub struct IndexValue {
 #[repr(C, packed)]
 pub struct BacklinkEntry {
     pub source: RecordId,
-    pub flags: u32,
     pub next: i32, // relative offset in backlinks to BacklinkEntry (0 if null)
     pub prev: i32,
 }
-const BACKLINK_ENTRY_SIZE: usize = std::mem::size_of::<BacklinkEntry>();
+const BACKLINK_ENTRY_SIZE: usize = size_of::<BacklinkEntry>();
 // assert BacklinkEntry is 32 bytes
 const _: [(); 32] = [(); BACKLINK_ENTRY_SIZE];
 
@@ -89,7 +87,6 @@ impl LiveStorageWriter {
             if pread_all(&index_file, &mut buf, 0).is_err() {
                 let mut header = IndexHeader {
                     num_records: 0,
-                    num_idents: 0,
                     _pad: Default::default(),
                 };
                 pwrite_all(&mut index_file, header.as_mut_bytes(), 0)?;
@@ -150,7 +147,6 @@ impl LiveStorageWriter {
             &mut self.index_file,
             RecordIndexEntry {
                 target: *target,
-                flags: 0,
                 head: index_value.head,
                 tail: index_value.tail,
             }
@@ -165,7 +161,6 @@ impl LiveStorageWriter {
         self.index_file_append.write_all(
             RecordIndexEntry {
                 target: *target,
-                flags: 0,
                 head: index_value.head,
                 tail: index_value.tail,
             }
@@ -178,7 +173,6 @@ impl LiveStorageWriter {
     pub fn write_backlink(&mut self, target: &RecordId, source: &RecordId) -> Result<()> {
         let mut new_entry = BacklinkEntry {
             source: *source,
-            flags: 0,
             next: 0,
             prev: 0,
         };
