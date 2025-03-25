@@ -52,3 +52,7 @@ path = "src/cmds/growth_rate_counter.rs"
 [[bin]]
 name = "live-rollover"
 path = "src/cmds/live_rollover.rs"
+
+[[bin]]
+name = "compaction"
+path = "src/cmds/compaction.rs"

@@ -330,6 +330,16 @@ impl LiveStorageReader {
             }
         };
 
+        self.read_backlinks_from_index_entry(&index_entry, backlinks)?;
+
+        Ok(())
+    }
+
+    pub fn read_backlinks_from_index_entry(
+        &mut self,
+        index_entry: &RecordIndexEntry,
+        backlinks: &mut BTreeSet<RecordId>,
+    ) -> Result<()> {
         let mut slot = index_entry.head;
         loop {
             let pos = slot as usize * BACKLINK_ENTRY_SIZE;

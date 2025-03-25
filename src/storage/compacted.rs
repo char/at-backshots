@@ -72,11 +72,21 @@ impl CompactedStorageWriter {
             .create(true)
             .append(true)
             .open(dir.as_ref().join("links.dat"))?;
-        let index_random = File::options()
+        let mut index_random = File::options()
             .read(true)
             .write(true)
             .truncate(false)
             .open(dir.as_ref().join("index.dat"))?;
+        {
+            let mut buf = [0u8; INDEX_HEADER_SIZE];
+            if pread_all(&index_random, &mut buf, 0).is_err() {
+                let mut header = RecordIndexHeader {
+                    num_entries: 0,
+                    _pad: Default::default(),
+                };
+                pwrite_all(&mut index_random, header.as_mut_bytes(), 0)?;
+            }
+        };
 
         Ok(CompactedStorageWriter {
             index,
@@ -87,8 +97,7 @@ impl CompactedStorageWriter {
         })
     }
 
-    pub fn log_backlinks(&mut self, target: &RecordId, sources: &[RecordId]) -> Result<()> {
-        debug_assert!(sources.is_sorted(), "links must be logged in order!");
+    pub fn log_backlinks(&mut self, target: &RecordId, sources: &BTreeSet<RecordId>) -> Result<()> {
         if let Some(last_target) = self.last_target {
             debug_assert!(&last_target <= target, "links must be logged in order!");
         }
