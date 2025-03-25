@@ -3,8 +3,8 @@ use std::os::fd::AsFd;
 use anyhow::Result;
 use nix::{libc::off_t, sys::uio};
 
-pub mod compacted_writer;
-pub mod live_writer;
+pub mod compacted;
+pub mod live;
 
 pub fn pread_all(fd: impl AsFd, buf: &mut [u8], offset: usize) -> Result<()> {
     let mut read = 0;

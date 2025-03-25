@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use ipld_core::{cid::Cid, ipld::Ipld};
 
-use crate::{car::CarFile, storage::live_writer::LiveStorageWriter, AppContext};
+use crate::{car::CarFile, storage::live::LiveStorageWriter, AppContext};
 
 use super::common::handle_backlinks;
 

@@ -9,7 +9,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use crate::ingest::carslice::handle_carslice;
 use crate::AppContext;
-use crate::{car::read_car_v1, storage::live_writer::LiveStorageWriter};
+use crate::{car::read_car_v1, storage::live::LiveStorageWriter};
 
 use super::subscribe_repos::{StreamEventHeader, SubscribeReposCommit, SubscribeReposInfo};
 

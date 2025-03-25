@@ -2,7 +2,7 @@ use std::{fs::File, io::Read, time::Instant};
 
 use anyhow::Result;
 use backshots::{
-    get_app_config, ingest::repo_car::ingest_repo_archive, storage::live_writer::LiveStorageWriter,
+    get_app_config, ingest::repo_car::ingest_repo_archive, storage::live::LiveStorageWriter,
     AppContext,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};

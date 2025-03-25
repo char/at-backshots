@@ -7,7 +7,7 @@ use crate::{
         did::encode_did,
         record::{encode_collection, encode_rkey, RecordId},
     },
-    storage::live_writer::LiveStorageWriter,
+    storage::live::LiveStorageWriter,
     AppContext,
 };
 

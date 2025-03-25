@@ -17,7 +17,7 @@ use backshots::{
     },
     get_app_config,
     http::{body_full, Body},
-    storage::live_writer::LiveStorageWriter,
+    storage::live::LiveStorageWriter,
     AppConfig, AppContext,
 };
 

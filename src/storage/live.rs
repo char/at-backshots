@@ -74,14 +74,12 @@ impl LiveStorageWriter {
             .read(true)
             .clone();
 
-        let mut index_file = base_options
-            .clone()
-            .open(dir.as_ref().join("./index.dat"))?;
+        let mut index_file = base_options.clone().open(dir.as_ref().join("index.dat"))?;
         let index_file_append = base_options
             .clone()
             .write(false)
             .append(true)
-            .open(dir.as_ref().join("./index.dat"))?;
+            .open(dir.as_ref().join("index.dat"))?;
         {
             let mut buf = [0u8; INDEX_HEADER_SIZE];
             if pread_all(&index_file, &mut buf, 0).is_err() {
@@ -95,9 +93,7 @@ impl LiveStorageWriter {
 
         let index_btree = Self::load_btree(&mut index_file)?;
 
-        let links_file = base_options
-            .clone()
-            .open(dir.as_ref().join("./links.dat"))?;
+        let links_file = base_options.clone().open(dir.as_ref().join("links.dat"))?;
 
         Ok(Self {
             index_file,
