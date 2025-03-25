@@ -35,7 +35,7 @@ pub fn s32decode(s: &str) -> u64 {
 }
 
 pub fn is_tid(s: &str) -> bool {
-    s.len() == TID_LEN && s.bytes().all(|it| S32_MAP[it as usize] != 255)
+    s.len() == TID_LEN && s.bytes().all(|it| S32_MAP[it as usize] != 255) && s < "k222222222222"
 }
 
 #[test]
