@@ -52,9 +52,6 @@ const POS_ALIGN: u64 = 32;
 // we store the rkeys uncompressed and contiguously so that we can binary search
 // for a specific RecordId, so that deletion-marking in compacted stores can be fast
 
-// TODO: we should do something better than passing a BTreeMap<RecordId, BTreeSet<RecordId>>
-//       once we know what we want for converting live stores to compacted ones
-
 pub struct CompactedStorageWriter {
     index: File,        // create, append
     links: File,        // create, append
