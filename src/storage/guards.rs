@@ -71,7 +71,7 @@ impl LiveStorageWriterGuard {
         };
 
         db.execute(
-            "INSERT INTO data_store_users (data_store_id, node_id) VALUES (?, ?)",
+            "INSERT INTO data_store_users (data_store_id, node_id, mode) VALUES (?, ?, 'live')",
             (id, app.node_id.to_string()),
         )?;
         let user_id = db.last_insert_rowid() as u64;

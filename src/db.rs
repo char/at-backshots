@@ -50,7 +50,8 @@ pub fn setup_db(db: &DbConnection) -> Result<()> {
         "CREATE TABLE IF NOT EXISTS data_store_users (
         id INTEGER PRIMARY KEY,
         data_store_id INTEGER NOT NULL,
-        node_id TEXT NOT NULL
+        node_id TEXT NOT NULL,
+        mode TEXT NOT NULL -- data_stores.type
 ) STRICT",
         (),
     )?;

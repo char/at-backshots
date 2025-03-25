@@ -48,3 +48,7 @@ path = "src/cmds/repo_ingest.rs"
 [[bin]]
 name = "growth-rate-counter"
 path = "src/cmds/growth_rate_counter.rs"
+
+[[bin]]
+name = "live-rollover"
+path = "src/cmds/live_rollover.rs"
