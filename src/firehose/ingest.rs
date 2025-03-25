@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, io::Cursor, time::Duration};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use crate::ingest::carslice::handle_carslice;
+use crate::storage::live_guards::LiveStorageWriterGuard;
 use crate::AppContext;
 use crate::{car::read_car_v1, storage::live::LiveStorageWriter};
 
@@ -19,6 +20,9 @@ pub async fn ingest_firehose(
     port: u16,
     tls: bool,
 ) -> Result<()> {
+    let mut storage = tokio::task::block_in_place(|| LiveStorageWriterGuard::latest(app))?;
+    let mut event_count: u8 = 0;
+
     'reconnect: loop {
         let cursor = {
             app.db
@@ -46,12 +50,10 @@ pub async fn ingest_firehose(
             .await
             .context("failed to connect websocket")?;
 
-        // TODO: we want to load a new LiveStorageWriter when we see that the active store has changed
-        let mut storage =
-            tokio::task::block_in_place(|| LiveStorageWriter::new("/dev/shm/backshots/data"))?;
+        let mut cursor = cursor.unwrap_or_default();
 
         loop {
-            let response = match tokio::time::timeout(Duration::from_secs(5), ws.next()).await {
+            let response = match tokio::time::timeout(Duration::from_secs(30), ws.next()).await {
                 Ok(response) => response,
                 Err(_timeout) => {
                     tracing::info!("websocket stream went quiet, reconnecting");
@@ -61,7 +63,20 @@ pub async fn ingest_firehose(
             };
             match response {
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(bytes))) => {
-                    tokio::task::block_in_place(|| handle_event(app, &mut storage, bytes))?;
+                    event_count += 1;
+                    if event_count % 128 == 0 {
+                        event_count = 0;
+                        if LiveStorageWriterGuard::latest_id(app).ok() != Some(storage.store_id) {
+                            tracing::info!("rolling over live storage");
+
+                            storage =
+                                tokio::task::block_in_place(|| LiveStorageWriterGuard::latest(app))?
+                        }
+                    }
+
+                    tokio::task::block_in_place(|| {
+                        handle_event(app, &mut storage, bytes, &mut cursor)
+                    })?;
                 }
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_close_frame))) => {
                     tracing::warn!("got close frame. reconnecting in 10s");
@@ -88,11 +103,16 @@ pub async fn ingest_firehose(
     Ok(())
 }
 
-fn handle_event(app: &mut AppContext, storage: &mut LiveStorageWriter, event: Bytes) -> Result<()> {
+fn handle_event(
+    app: &mut AppContext,
+    storage: &mut LiveStorageWriter,
+    event: Bytes,
+    cursor_ref: &mut u64,
+) -> Result<()> {
     let buf: &[u8] = &event;
-    let mut cursor = Cursor::new(buf);
-    let (header_buf, payload_buf) = match serde_ipld_dagcbor::from_reader::<Ipld, _>(&mut cursor) {
-        Err(DecodeError::TrailingData) => buf.split_at(cursor.position() as usize),
+    let mut buf_cur = Cursor::new(buf);
+    let (header_buf, payload_buf) = match serde_ipld_dagcbor::from_reader::<Ipld, _>(&mut buf_cur) {
+        Err(DecodeError::TrailingData) => buf.split_at(buf_cur.position() as usize),
         _ => anyhow::bail!("invalid sync frame format"),
     };
 
@@ -101,12 +121,17 @@ fn handle_event(app: &mut AppContext, storage: &mut LiveStorageWriter, event: By
     match header.t.as_deref() {
         Some("#commit") => {
             let commit = serde_ipld_dagcbor::from_slice::<SubscribeReposCommit>(payload_buf)?;
+            if commit.sequence as u64 <= *cursor_ref {
+                return Ok(());
+            }
 
             {
+                let cursor = commit.sequence as u64;
                 app.db.execute(
                     "INSERT OR REPLACE INTO COUNTS (key, count) VALUES ('firehose_cursor', ?)",
-                    [commit.sequence as u64],
+                    [cursor],
                 )?;
+                *cursor_ref = cursor;
             }
 
             let mut cursor = Cursor::new(commit.blocks);

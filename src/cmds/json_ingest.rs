@@ -1,6 +1,6 @@
 use anyhow::Result;
 use backshots::{
-    get_app_config, ingest::likes_test::ingest_json, storage::guards::LiveStorageWriterGuard,
+    get_app_config, ingest::likes_test::ingest_json, storage::live_guards::LiveStorageWriterGuard,
     AppContext,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};

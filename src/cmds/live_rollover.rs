@@ -1,5 +1,5 @@
 use anyhow::Result;
-use backshots::{get_app_config, storage::guards::LiveStorageWriterGuard, AppContext};
+use backshots::{get_app_config, storage::live_guards::LiveStorageWriterGuard, AppContext};
 
 fn main() -> Result<()> {
     let cfg = get_app_config()?;

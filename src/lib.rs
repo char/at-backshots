@@ -48,7 +48,6 @@ pub struct AppContext {
 impl AppContext {
     pub fn new(cfg: &AppConfig) -> Result<Self> {
         let node_id = Uuid::new_v4();
-        tracing::info!(%node_id, "creating new node…");
 
         let _ = std::fs::create_dir_all(&cfg.data_dir);
         let db_path = cfg.data_dir.join("db");

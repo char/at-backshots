@@ -17,11 +17,11 @@ use backshots::{
     },
     get_app_config,
     http::{body_full, Body},
-    storage::live::LiveStorageWriter,
+    storage::live_guards::LiveStorageReaderGuard,
     AppConfig, AppContext,
 };
 
-async fn get_response(cfg: Arc<AppConfig>, req: Request<Incoming>) -> Result<Response<Body>> {
+fn get_response(cfg: Arc<AppConfig>, req: Request<Incoming>) -> Result<Response<Body>> {
     let mut app = AppContext::new(&cfg)?;
     let path = req.uri().path();
 
@@ -41,7 +41,6 @@ async fn get_response(cfg: Arc<AppConfig>, req: Request<Incoming>) -> Result<Res
                 (),
                 |row| row.get(0),
             )?;
-            let targets_count: u64 = 0; // TODO: read targets count from backlink storage
             let rkey_count: u64 =
                 db.query_row("SELECT COUNT(id) FROM outline_rkeys", (), |row| row.get(0))?;
             let did_count: u64 =
@@ -53,10 +52,10 @@ async fn get_response(cfg: Arc<AppConfig>, req: Request<Incoming>) -> Result<Res
                 .body(body_full(format!(
                     r#"status:
 collections: {}
-backlinks: {} (targets: {})
+backlinks: {}
 outline rkeys: {}
 non-zplc dids: {}"#,
-                    collection_count, backlink_count, targets_count, rkey_count, did_count,
+                    collection_count, backlink_count, rkey_count, did_count,
                 )))?)
         }
 
@@ -79,21 +78,32 @@ non-zplc dids: {}"#,
                     .body(body_full("'uri' param was not a valid at-uri"))?);
             };
 
-            let mut storage = LiveStorageWriter::new("/dev/shm/backshots/data")?;
+            let backlink_uris = tokio::task::block_in_place(|| -> anyhow::Result<_> {
+                let mut backlinks = BTreeSet::<RecordId>::new();
 
-            let mut backlinks = BTreeSet::<String>::new();
-            for link in storage.read_backlinks(&record_id)? {
-                let did = resolve_did(&app, link.source.did)?;
-                let collection = resolve_collection(&app, link.source.collection)?;
-                let rkey = resolve_rkey(&app, link.source.rkey)?;
-                backlinks.insert(format!("at://{did}/{collection}/{rkey}"));
-            }
+                // TODO: read from compacted stores
+
+                for live_store_id in LiveStorageReaderGuard::all(&app)? {
+                    let mut storage = LiveStorageReaderGuard::new(&app, live_store_id)?;
+                    storage.read_backlinks(&record_id, &mut backlinks)?;
+                }
+
+                let mut backlink_uris = BTreeSet::<String>::new();
+                for source in backlinks {
+                    let did = resolve_did(&app, source.did)?;
+                    let collection = resolve_collection(&app, source.collection)?;
+                    let rkey = resolve_rkey(&app, source.rkey)?;
+                    backlink_uris.insert(format!("at://{did}/{collection}/{rkey}"));
+                }
+
+                Ok(backlink_uris)
+            })?;
 
             Ok(Response::builder()
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(body_full(
                     tinyjson::JsonValue::Array(
-                        backlinks
+                        backlink_uris
                             .into_iter()
                             .map(tinyjson::JsonValue::String)
                             .collect(),
@@ -110,7 +120,7 @@ non-zplc dids: {}"#,
 }
 
 async fn serve(cfg: Arc<AppConfig>, req: Request<Incoming>) -> Result<Response<Body>> {
-    match get_response(cfg, req).await {
+    match tokio::task::spawn_blocking(move || get_response(cfg, req)).await? {
         Ok(res) => Ok(res),
         Err(err) => {
             tracing::error!("error handling request: {err:?}");

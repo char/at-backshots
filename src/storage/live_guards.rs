@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::{db::DbConnection, AppContext};
 
-use super::live::LiveStorageWriter;
+use super::live::{LiveStorageReader, LiveStorageWriter};
 
 pub struct LiveStorageWriterGuard {
     db: DbConnection,
@@ -70,11 +70,13 @@ impl LiveStorageWriterGuard {
             }
         };
 
-        db.execute(
-            "INSERT INTO data_store_users (data_store_id, node_id, mode) VALUES (?, ?, 'live')",
-            (id, app.node_id.to_string()),
-        )?;
-        let user_id = db.last_insert_rowid() as u64;
+        let user_id = {
+            db.execute(
+                "INSERT INTO data_store_users (data_store_id, node_id, mode) VALUES (?, ?, 'live')",
+                (id, app.node_id.to_string()),
+            )?;
+            db.last_insert_rowid() as u64
+        };
 
         let writer = LiveStorageWriter::new(app.data_dir.join("live/").join(name))?;
 
@@ -92,5 +94,68 @@ impl Drop for LiveStorageWriterGuard {
         self.db
             .execute("DELETE FROM data_store_users WHERE id = ?", [self.user_id])
             .expect("failed to release LiveStorageWriter guard!");
+    }
+}
+
+pub struct LiveStorageReaderGuard {
+    db: DbConnection,
+    user_id: u64,
+    pub reader: LiveStorageReader,
+}
+impl Deref for LiveStorageReaderGuard {
+    type Target = LiveStorageReader;
+    fn deref(&self) -> &Self::Target {
+        &self.reader
+    }
+}
+impl DerefMut for LiveStorageReaderGuard {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.reader
+    }
+}
+
+impl LiveStorageReaderGuard {
+    pub fn all(app: &AppContext) -> Result<Vec<u64>> {
+        let mut statement = app
+            .db
+            .prepare("SELECT id FROM data_stores WHERE type = 'live' ORDER BY id ASC")?;
+        let v = statement
+            .query_map((), |row| row.get::<_, u64>(0))?
+            .filter_map(Result::ok)
+            .collect();
+        Ok(v)
+    }
+
+    pub fn new(app: &AppContext, store_id: u64) -> Result<Self> {
+        let db = app.connect_to_db()?;
+
+        let name: String = db.query_row(
+            "SELECT name FROM data_stores WHERE id = ? AND type = 'live'",
+            [store_id],
+            |row| row.get(0),
+        )?;
+
+        let user_id = {
+            db.execute(
+                "INSERT INTO data_store_users (data_store_id, node_id, mode) VALUES (?, ?, 'live')",
+                (store_id, app.node_id.to_string()),
+            )?;
+            db.last_insert_rowid() as u64
+        };
+
+        let reader = LiveStorageReader::new(app.data_dir.join("live").join(name))?;
+
+        Ok(Self {
+            db,
+            user_id,
+            reader,
+        })
+    }
+}
+impl Drop for LiveStorageReaderGuard {
+    fn drop(&mut self) {
+        self.db
+            .execute("DELETE FROM data_store_users WHERE id = ?", [self.user_id])
+            .expect("failed to release LiveStorageReader guard!");
     }
 }

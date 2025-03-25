@@ -2,7 +2,7 @@
 #![allow(deprecated)]
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::File,
     io::{Seek, SeekFrom, Write},
     mem::size_of,
@@ -281,5 +281,71 @@ impl LiveStorageWriter {
         }
 
         Ok(links)
+    }
+}
+
+pub struct LiveStorageReader {
+    index: File,
+    links: File,
+}
+
+impl LiveStorageReader {
+    pub fn new(dir: impl AsRef<Path>) -> Result<Self> {
+        let index = File::options()
+            .read(true)
+            .open(dir.as_ref().join("index.dat"))?;
+        let links = File::options()
+            .read(true)
+            .open(dir.as_ref().join("links.dat"))?;
+        Ok(Self { index, links })
+    }
+
+    pub fn list_all_targets(&mut self) -> Result<BTreeMap<RecordId, RecordIndexEntry>> {
+        let mut tree = BTreeMap::new();
+
+        self.index.seek(SeekFrom::Start(INDEX_HEADER_SIZE as u64))?;
+        loop {
+            let Ok(entry) = RecordIndexEntry::read_from_io(&mut self.index) else {
+                break;
+            };
+            tree.insert(entry.target, entry);
+        }
+
+        Ok(tree)
+    }
+
+    pub fn read_backlinks(
+        &mut self,
+        target: &RecordId,
+        backlinks: &mut BTreeSet<RecordId>,
+    ) -> Result<()> {
+        self.index.seek(SeekFrom::Start(INDEX_HEADER_SIZE as u64))?;
+
+        let index_entry = loop {
+            let Ok(entry) = RecordIndexEntry::read_from_io(&mut self.index) else {
+                return Ok(());
+            };
+            if &entry.target == target {
+                break entry;
+            }
+        };
+
+        let mut slot = index_entry.head;
+        loop {
+            let pos = slot as usize * BACKLINK_ENTRY_SIZE;
+            let entry: BacklinkEntry = {
+                let mut buf = [0u8; BACKLINK_ENTRY_SIZE];
+                pread_all(&self.links, &mut buf, pos)?;
+                zerocopy::transmute!(buf)
+            };
+            backlinks.insert(entry.source);
+            if entry.next == 0 {
+                break;
+            }
+
+            slot = (slot as i64 + entry.next as i64) as u64;
+        }
+
+        Ok(())
     }
 }
