@@ -7,25 +7,21 @@ use serde_ipld_dagcbor::DecodeError;
 use std::{collections::BTreeMap, io::Cursor, time::Duration};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
-use crate::{
-    car::read_car_v1,
-    lexicons::{StreamEventHeader, SubscribeReposCommit, SubscribeReposInfo},
-    storage::live_writer::LiveStorageWriter,
-    AppState,
-};
+use crate::ingest::carslice::handle_carslice;
+use crate::AppContext;
+use crate::{car::read_car_v1, storage::live_writer::LiveStorageWriter};
 
-use super::carslice::handle_carslice;
+use super::subscribe_repos::{StreamEventHeader, SubscribeReposCommit, SubscribeReposInfo};
 
 pub async fn ingest_firehose(
-    app: &AppState,
-    mut storage: LiveStorageWriter,
+    app: &mut AppContext,
     domain: &str,
     port: u16,
     tls: bool,
 ) -> Result<()> {
     'reconnect: loop {
         let cursor = {
-            app.db()
+            app.db
                 .query_row(
                     "SELECT count FROM counts WHERE key = 'firehose_cursor'",
                     (),
@@ -49,6 +45,11 @@ pub async fn ingest_firehose(
         let (mut ws, _res) = tokio_tungstenite::connect_async(req)
             .await
             .context("failed to connect websocket")?;
+
+        // TODO: we want to load a new LiveStorageWriter when we see that the active store has changed
+        let mut storage =
+            tokio::task::block_in_place(|| LiveStorageWriter::new("/dev/shm/backshots/data"))?;
+
         loop {
             let response = match tokio::time::timeout(Duration::from_secs(5), ws.next()).await {
                 Ok(response) => response,
@@ -60,7 +61,7 @@ pub async fn ingest_firehose(
             };
             match response {
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(bytes))) => {
-                    handle_event(app, &mut storage, bytes).await?;
+                    tokio::task::block_in_place(|| handle_event(app, &mut storage, bytes))?;
                 }
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_close_frame))) => {
                     tracing::warn!("got close frame. reconnecting in 10s");
@@ -87,7 +88,7 @@ pub async fn ingest_firehose(
     Ok(())
 }
 
-async fn handle_event(app: &AppState, storage: &mut LiveStorageWriter, event: Bytes) -> Result<()> {
+fn handle_event(app: &mut AppContext, storage: &mut LiveStorageWriter, event: Bytes) -> Result<()> {
     let buf: &[u8] = &event;
     let mut cursor = Cursor::new(buf);
     let (header_buf, payload_buf) = match serde_ipld_dagcbor::from_reader::<Ipld, _>(&mut cursor) {
@@ -102,7 +103,7 @@ async fn handle_event(app: &AppState, storage: &mut LiveStorageWriter, event: By
             let commit = serde_ipld_dagcbor::from_slice::<SubscribeReposCommit>(payload_buf)?;
 
             {
-                app.db().execute(
+                app.db.execute(
                     "INSERT OR REPLACE INTO COUNTS (key, count) VALUES ('firehose_cursor', ?)",
                     [commit.sequence as u64],
                 )?;
@@ -110,7 +111,7 @@ async fn handle_event(app: &AppState, storage: &mut LiveStorageWriter, event: By
 
             let mut cursor = Cursor::new(commit.blocks);
             let reader = &mut cursor;
-            let car_file = read_car_v1(reader).await?;
+            let car_file = read_car_v1(reader)?;
 
             let mut records = BTreeMap::<Cid, String>::new();
             for op in commit.operations {
@@ -130,7 +131,7 @@ async fn handle_event(app: &AppState, storage: &mut LiveStorageWriter, event: By
 
             if !records.is_empty() {
                 if let Err(e) =
-                    handle_carslice(app, storage, commit.repo, reader, &car_file, &records).await
+                    handle_carslice(app, storage, commit.repo, reader, &car_file, &records)
                 {
                     tracing::error!("{:?}", e);
                 };

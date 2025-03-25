@@ -1,7 +1,10 @@
-use anyhow::Result;
-use rusqlite::Connection;
+use std::collections::HashMap;
 
-pub fn setup_db(db: &Connection) -> Result<()> {
+use anyhow::Result;
+
+pub type DbConnection = rusqlite::Connection;
+
+pub fn setup_db(db: &DbConnection) -> Result<()> {
     db.pragma_update(None, "journal_mode", "WAL")?;
     db.execute(
         "CREATE TABLE IF NOT EXISTS counts (
@@ -53,4 +56,10 @@ pub fn setup_db(db: &Connection) -> Result<()> {
     )?;
 
     Ok(())
+}
+
+#[derive(Default)]
+pub struct DbCaches {
+    pub did: HashMap<String, u64>,
+    pub collection: HashMap<String, u32>,
 }

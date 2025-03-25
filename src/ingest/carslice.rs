@@ -1,15 +1,17 @@
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashSet},
+    io::{Read, Seek},
+};
 
 use anyhow::Result;
 use ipld_core::{cid::Cid, ipld::Ipld};
-use tokio::io::{AsyncRead, AsyncSeek};
 
-use crate::{car::CarFile, storage::live_writer::LiveStorageWriter, AppState};
+use crate::{car::CarFile, storage::live_writer::LiveStorageWriter, AppContext};
 
 use super::common::handle_backlinks;
 
-pub async fn handle_carslice<R: AsyncRead + AsyncSeek + Unpin>(
-    app: &AppState,
+pub fn handle_carslice<R: Read + Seek>(
+    app: &mut AppContext,
     storage: &mut LiveStorageWriter,
     repo: String,
     reader: &mut R,
@@ -21,7 +23,7 @@ pub async fn handle_carslice<R: AsyncRead + AsyncSeek + Unpin>(
             continue;
         };
 
-        let cbor = match car_file.read_block(reader, cid).await {
+        let cbor = match car_file.read_block(reader, cid) {
             Ok(cbor) => cbor,
             Err(e) => {
                 tracing::warn!(%repo, %path, "skipping record (could not read carslice block): {e:?}");
@@ -45,10 +47,10 @@ pub async fn handle_carslice<R: AsyncRead + AsyncSeek + Unpin>(
             }
         }
 
-        handle_backlinks(app, storage, &repo, collection, rkey, backlinks).await?;
+        handle_backlinks(app, storage, &repo, collection, rkey, backlinks)?;
     }
 
-    app.flush_backlink_count(&app.db())?;
+    app.backlinks_counter.flush(&app.db)?;
 
     Ok(())
 }

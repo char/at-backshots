@@ -1,4 +1,5 @@
-use chrono::{DateTime, Utc};
+#![allow(dead_code)]
+
 use ipld_core::cid::Cid;
 use serde::Deserialize;
 
@@ -30,7 +31,7 @@ pub struct SubscribeReposCommit {
     pub repo: String,
     #[serde(rename(deserialize = "seq"))]
     pub sequence: i64,
-    pub time: DateTime<Utc>,
+    pub time: String,
     #[serde(rename(deserialize = "tooBig"))]
     pub too_big: bool,
 }

@@ -2,25 +2,27 @@ use crate::{
     car::read_car_v1,
     mst::{MSTNode, SignedCommitNode},
     storage::live_writer::LiveStorageWriter,
-    AppState,
+    AppContext,
 };
 use anyhow::Result;
 use ipld_core::cid::Cid;
-use std::collections::{BTreeMap, VecDeque};
-use tokio::io::{AsyncRead, AsyncSeek};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    io::{Read, Seek},
+};
 
 use super::carslice::handle_carslice;
 
-pub async fn ingest_repo_archive<R: AsyncRead + AsyncSeek + Unpin>(
-    app: &AppState,
+pub fn ingest_repo_archive<R: Read + Seek>(
+    app: &mut AppContext,
     storage: &mut LiveStorageWriter,
     repo: String,
     reader: &mut R,
 ) -> Result<()> {
-    let car = read_car_v1(reader).await?;
+    let car = read_car_v1(reader)?;
 
     let commit_cid = car.roots.first().copied().unwrap();
-    let commit = car.read_block(reader, &commit_cid).await?;
+    let commit = car.read_block(reader, &commit_cid)?;
     let commit = serde_ipld_dagcbor::from_slice::<SignedCommitNode>(&commit)?;
 
     let mut entry_queue = VecDeque::<(Cid, bool)>::new();
@@ -29,7 +31,7 @@ pub async fn ingest_repo_archive<R: AsyncRead + AsyncSeek + Unpin>(
     let mut records = Vec::new();
 
     while let Some((ptr, left_visited)) = entry_queue.pop_front() {
-        let buf = car.read_block(reader, &ptr).await?;
+        let buf = car.read_block(reader, &ptr)?;
         let mst_node = serde_ipld_dagcbor::from_slice::<MSTNode>(&buf)?;
 
         if !left_visited {
@@ -59,7 +61,7 @@ pub async fn ingest_repo_archive<R: AsyncRead + AsyncSeek + Unpin>(
         .map(|(path, cid)| (cid, path))
         .collect::<BTreeMap<_, _>>();
 
-    handle_carslice(app, storage, repo, reader, &car, &records).await?;
+    handle_carslice(app, storage, repo, reader, &car, &records)?;
 
     Ok(())
 }

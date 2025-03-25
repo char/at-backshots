@@ -2,13 +2,17 @@ use anyhow::Result;
 use std::collections::HashSet;
 
 use crate::{
-    data::{at_uri::parse_at_uri, record::RecordId},
+    data::{
+        at_uri::parse_at_uri,
+        did::encode_did,
+        record::{encode_collection, encode_rkey, RecordId},
+    },
     storage::live_writer::LiveStorageWriter,
-    AppState,
+    AppContext,
 };
 
-pub async fn handle_backlinks(
-    app: &AppState,
+pub fn handle_backlinks(
+    app: &mut AppContext,
     storage: &mut LiveStorageWriter,
     repo: &str,
     collection: &str,
@@ -20,9 +24,9 @@ pub async fn handle_backlinks(
     }
 
     let source = RecordId::new(
-        app.encode_did(repo).await?,
-        app.encode_collection(collection)?,
-        app.encode_rkey(rkey)?,
+        encode_did(app, repo)?,
+        encode_collection(app, collection)?,
+        encode_rkey(app, rkey)?,
     );
 
     let source_display = format!("at://{repo}/{collection}/{rkey}");
@@ -38,47 +42,26 @@ pub async fn handle_backlinks(
 
         // my kingdom for a try block
         #[inline]
-        async fn create_record_id(
-            app: &AppState,
+        fn create_record_id(
+            app: &mut AppContext,
             did: &str,
             collection: &str,
             rkey: &str,
         ) -> Result<RecordId> {
             Ok(RecordId::new(
-                app.encode_did(did).await?,
-                app.encode_collection(collection)?,
-                app.encode_rkey(rkey)?,
+                encode_did(app, did)?,
+                encode_collection(app, collection)?,
+                encode_rkey(app, rkey)?,
             ))
         }
 
-        #[inline]
-        fn try_create_record_id_sync(
-            app: &AppState,
-            did: &str,
-            collection: &str,
-            rkey: &str,
-        ) -> Result<RecordId> {
-            Ok(RecordId::new(
-                app.try_encode_did_sync(did)
-                    .ok_or_else(|| anyhow::anyhow!("cant encode did"))?,
-                app.encode_collection(collection)?,
-                app.encode_rkey(rkey)?,
-            ))
-        }
-
-        let record_id =
-            match try_create_record_id_sync(app, target_repo, target_collection, target_rkey) {
-                Ok(target) => Ok(target),
-                Err(_) => create_record_id(app, repo, collection, rkey).await,
-            };
-
-        match record_id {
+        match create_record_id(app, target_repo, target_collection, target_rkey) {
             Ok(target) => {
                 tracing::debug!(from = source_display, to = uri, "backlink");
 
                 // TODO: we probably shouldnt block the runtime like this but whatever
                 storage.write_backlink(&target, &source)?;
-                app.incr_backlink_count(1)?;
+                app.backlinks_counter.add(1);
             }
             Err(e) => tracing::warn!("failed to create RecordId: {:?}", e),
         };

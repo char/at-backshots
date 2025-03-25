@@ -1,61 +1,55 @@
 use anyhow::Result;
 
-use crate::AppState;
+use crate::AppContext;
 
-pub type Did = u64;
 pub const DID_MASK: u64 = 0x0000FFFFFFFFFFFF;
-pub const ZPLC_MASK: u64 = 0x3FFFFFFFFFFF;
 // did:web, and did:plc past 2^48 (≈ 280 trillion)
 pub const DID_FLAG_NON_STANDARD: u64 = 1 << 63;
 
-impl AppState {
-    pub async fn resolve_did(&self, did: Did) -> Result<String> {
-        if did & DID_FLAG_NON_STANDARD == 0 {
-            return self.zplc_to_did(did).await;
+pub fn resolve_did(app: &AppContext, did: u64) -> Result<String> {
+    if did & DID_FLAG_NON_STANDARD == 0 {
+        return app.tokio_rt.block_on(app.zplc_resolver.zplc_to_did(did));
+    }
+
+    let did: String = app.db.query_row(
+        "SELECT did FROM outline_dids WHERE id = ?",
+        [did & DID_MASK],
+        |row| row.get(0),
+    )?;
+    Ok(did)
+}
+
+pub fn encode_existing_did(app: &AppContext, did: &str) -> Result<Option<u64>> {
+    if did.starts_with("did:plc:") {
+        if let Ok(Some(zplc)) = app.tokio_rt.block_on(app.zplc_resolver.lookup_zplc(did)) {
+            return Ok(Some(zplc));
         }
-        let did: String = {
-            self.db()
-                .query_row("SELECT did FROM outline_dids WHERE id = ?", [did], |row| {
-                    row.get(0)
-                })
-        }?;
-        Ok(did)
     }
 
-    #[inline]
-    pub fn try_encode_did_sync(&self, did: &str) -> Option<Did> {
-        crate::zplc_client::ZPLC_CACHE.with_borrow(|cache| cache.get(did).cloned())
+    match app
+        .db
+        .query_row("SELECT id FROM outline_dids WHERE did = ?", [did], |row| {
+            row.get::<_, u64>(0)
+        }) {
+        Ok(did) => Ok(Some(did | DID_FLAG_NON_STANDARD)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub fn encode_did(app: &mut AppContext, did: &str) -> Result<u64> {
+    if let Some(cached) = app.caches.did.get(did) {
+        return Ok(*cached);
     }
 
-    pub async fn encode_did(&self, did: &str) -> Result<Did> {
-        if let Some(cached_value) = self.try_encode_did_sync(did) {
-            return Ok(cached_value);
+    let id = match encode_existing_did(&*app, did)? {
+        Some(did) => did,
+        None => {
+            app.db
+                .execute("INSERT OR IGNORE INTO outline_dids (did) VALUES (?)", [did])?;
+            app.db.last_insert_rowid() as u64
         }
-
-        if did.starts_with("did:plc:") {
-            if let Ok(Some(zplc)) = self.lookup_zplc(did).await {
-                return Ok(zplc);
-            }
-        }
-
-        self.encode_did_sync(did)
-    }
-
-    /// encodes a did but doesn't look up a zplc
-    pub fn encode_did_sync(&self, did: &str) -> Result<Did> {
-        let did: u64 = {
-            let db = self.db();
-            match db.query_row("SELECT id FROM outline_dids WHERE did = ?", [did], |row| {
-                row.get::<_, u64>(0)
-            }) {
-                Ok(did) => Ok(did),
-                Err(rusqlite::Error::QueryReturnedNoRows) => {
-                    db.execute("INSERT OR IGNORE INTO outline_dids (did) VALUES (?)", [did])?;
-                    Ok(db.last_insert_rowid() as u64)
-                }
-                Err(e) => Err(e),
-            }
-        }?;
-        Ok(did)
-    }
+    };
+    app.caches.did.insert(did.into(), id);
+    Ok(id)
 }

@@ -11,13 +11,18 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
 use backshots::{
-    data::record::RecordId,
+    data::{
+        did::resolve_did,
+        record::{resolve_collection, resolve_rkey, RecordId},
+    },
+    get_app_config,
     http::{body_full, Body},
     storage::live_writer::LiveStorageWriter,
-    AppState,
+    AppConfig, AppContext,
 };
 
-async fn get_response(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Body>> {
+async fn get_response(cfg: Arc<AppConfig>, req: Request<Incoming>) -> Result<Response<Body>> {
+    let mut app = AppContext::new(&cfg)?;
     let path = req.uri().path();
 
     match (req.method(), path) {
@@ -27,7 +32,7 @@ async fn get_response(app: Arc<AppState>, req: Request<Incoming>) -> Result<Resp
             .body(body_full("backshots running..."))?),
 
         (&Method::GET, "/status") => {
-            let db = app.db();
+            let db = app.db;
 
             let collection_count: u64 =
                 db.query_row("SELECT COUNT(id) FROM collections", (), |row| row.get(0))?;
@@ -68,7 +73,7 @@ non-zplc dids: {}"#,
                     .body(body_full("'uri' param missing"))?);
             };
 
-            let Ok(record_id) = RecordId::from_at_uri(&app, at_uri).await else {
+            let Ok(record_id) = RecordId::from_at_uri(&mut app, at_uri) else {
                 return Ok(Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .body(body_full("'uri' param was not a valid at-uri"))?);
@@ -78,9 +83,9 @@ non-zplc dids: {}"#,
 
             let mut backlinks = BTreeSet::<String>::new();
             for link in storage.read_backlinks(&record_id)? {
-                let did = app.resolve_did(link.source.did).await?;
-                let collection = app.resolve_collection(link.source.collection)?;
-                let rkey = app.resolve_rkey(link.source.rkey)?;
+                let did = resolve_did(&app, link.source.did)?;
+                let collection = resolve_collection(&app, link.source.collection)?;
+                let rkey = resolve_rkey(&app, link.source.rkey)?;
                 backlinks.insert(format!("at://{did}/{collection}/{rkey}"));
             }
 
@@ -104,8 +109,8 @@ non-zplc dids: {}"#,
     }
 }
 
-async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Body>> {
-    match get_response(app, req).await {
+async fn serve(cfg: Arc<AppConfig>, req: Request<Incoming>) -> Result<Response<Body>> {
+    match get_response(cfg, req).await {
         Ok(res) => Ok(res),
         Err(err) => {
             tracing::error!("error handling request: {err:?}");
@@ -117,19 +122,20 @@ async fn serve(app: Arc<AppState>, req: Request<Incoming>) -> Result<Response<Bo
     }
 }
 
-pub async fn listen(app: Arc<AppState>, addr: SocketAddr) -> Result<()> {
+pub async fn listen(cfg: Arc<AppConfig>, addr: SocketAddr) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
 
     loop {
         let (stream, _client_addr) = listener.accept().await?;
         let io = TokioIo::new(stream);
 
-        let app = Arc::clone(&app);
+        let cfg = Arc::clone(&cfg);
+
         tokio::task::spawn(async move {
             if let Err(err) = http1::Builder::new()
                 .serve_connection(
                     io,
-                    hyper::service::service_fn(move |req| serve(Arc::clone(&app), req)),
+                    hyper::service::service_fn(move |req| serve(Arc::clone(&cfg), req)),
                 )
                 .with_upgrades()
                 .await
@@ -148,12 +154,9 @@ pub async fn main() -> anyhow::Result<()> {
         .init();
 
     let addr: SocketAddr = "127.0.0.1:3000".parse()?;
-    let app = Arc::new(AppState::new(
-        "/dev/shm/backshots/data",
-        "http://127.0.0.1:2485".into(),
-    )?);
+    let cfg = Arc::new(get_app_config()?);
     println!("Listening at: http://{addr}/ ...");
-    listen(app, addr).await?;
+    listen(cfg, addr).await?;
 
     Ok(())
 }

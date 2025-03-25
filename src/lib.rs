@@ -1,62 +1,61 @@
-use std::{
-    path::Path,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Mutex, MutexGuard,
-    },
-};
+use std::path::PathBuf;
 
 use anyhow::Result;
-use db::setup_db;
-use rusqlite::Connection;
+use counter::MonotonicCounter;
+use db::{setup_db, DbCaches, DbConnection};
+use zplc_client::ZplcResolver;
 
 pub mod car;
 pub mod mst;
 
+pub mod counter;
 pub mod data;
 pub mod db;
+pub mod firehose;
 pub mod http;
 pub mod ingest;
-pub mod lexicons;
 pub mod storage;
 pub mod tid;
 pub mod zplc_client;
 
-pub struct AppState {
-    pub zplc_server: String,
-
-    backlink_incr: AtomicU64,
-    db: Mutex<rusqlite::Connection>,
+pub struct AppConfig {
+    pub zplc_base: String,
+    pub data_dir: PathBuf,
 }
 
-impl AppState {
-    pub fn new(data_dir: impl AsRef<Path>, zplc_server: String) -> Result<Self> {
-        let _ = std::fs::create_dir_all(data_dir.as_ref());
-        let db = Connection::open(data_dir.as_ref().join("./db"))?;
+pub fn get_app_config() -> Result<AppConfig> {
+    // TODO: read from environment variables or whatever
+    Ok(AppConfig {
+        zplc_base: "http://127.0.0.1:2485".into(),
+        data_dir: "/dev/shm/backshots/data".into(),
+    })
+}
+
+pub struct AppContext {
+    pub db: DbConnection,
+    pub caches: DbCaches,
+
+    pub zplc_resolver: ZplcResolver,
+    pub backlinks_counter: MonotonicCounter,
+
+    pub tokio_rt: tokio::runtime::Runtime,
+}
+impl AppContext {
+    pub fn new(cfg: &AppConfig) -> Result<Self> {
+        let _ = std::fs::create_dir_all(&cfg.data_dir);
+        let db = DbConnection::open(cfg.data_dir.join("db"))?;
         setup_db(&db)?;
-
         Ok(Self {
-            zplc_server,
-            backlink_incr: AtomicU64::new(0),
-            db: Mutex::new(db),
+            db,
+            caches: DbCaches::default(),
+
+            zplc_resolver: ZplcResolver {
+                base: cfg.zplc_base.clone(),
+            },
+            backlinks_counter: MonotonicCounter::new("backlinks"),
+            tokio_rt: tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .build()?,
         })
-    }
-
-    pub fn db(&self) -> MutexGuard<'_, Connection> {
-        self.db.lock().unwrap()
-    }
-
-    pub fn incr_backlink_count(&self, n: u64) -> Result<()> {
-        self.backlink_incr.fetch_add(n, Ordering::Relaxed);
-        Ok(())
-    }
-
-    pub fn flush_backlink_count(&self, db: &Connection) -> Result<()> {
-        let count_incr = self.backlink_incr.swap(0, Ordering::Relaxed);
-        db.execute(
-            "UPDATE counts SET count = count + ? WHERE key = 'backlinks'",
-            [count_incr],
-        )?;
-        Ok(())
     }
 }

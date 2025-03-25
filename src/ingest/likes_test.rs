@@ -1,10 +1,20 @@
-use std::str::FromStr;
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    str::FromStr,
+};
 
 use anyhow::{anyhow, Result};
 use tinyjson::JsonValue;
-use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::{data::record::RecordId, storage::live_writer::LiveStorageWriter, AppState};
+use crate::{
+    data::{
+        did::encode_did,
+        record::{encode_collection, encode_rkey, RecordId},
+    },
+    storage::live_writer::LiveStorageWriter,
+    AppContext,
+};
 
 #[derive(Debug)]
 pub enum Action {
@@ -48,13 +58,14 @@ impl FromStr for Action {
     }
 }
 
-pub async fn ingest_json(app: &AppState, mut storage: LiveStorageWriter) -> Result<()> {
-    let f = tokio::fs::File::open("./target/likes5-simple.jsonl").await?;
+pub fn ingest_json(app: &mut AppContext, mut storage: LiveStorageWriter) -> Result<()> {
+    let f = File::open("./target/likes5-simple.jsonl")?;
     let reader = BufReader::new(f);
-    let mut lines = reader.lines();
 
     let mut line_count = 0;
-    while let Some(line) = lines.next_line().await? {
+    for line in reader.lines() {
+        let line = line?;
+
         let action: Action = line.parse()?;
         let action = match action {
             Action::Create(c) => c,
@@ -62,23 +73,23 @@ pub async fn ingest_json(app: &AppState, mut storage: LiveStorageWriter) -> Resu
         };
 
         let source = RecordId::new(
-            app.encode_did(&action.did).await?,
-            app.encode_collection("app.bsky.feed.like")?,
-            app.encode_rkey(&action.rkey)?,
+            encode_did(app, &action.did)?,
+            encode_collection(app, "app.bsky.feed.like")?,
+            encode_rkey(app, &action.rkey)?,
         );
         let source_display = format!("at://{}/app.bsky.feed.like/{}", &action.did, &action.rkey);
-        let target = RecordId::from_at_uri(app, &action.uri).await?;
+        let target = RecordId::from_at_uri(app, &action.uri)?;
         storage.write_backlink(&target, &source)?;
-        app.incr_backlink_count(1)?;
+        app.backlinks_counter.add(1);
 
         if line_count % 4096 == 0 {
-            app.flush_backlink_count(&app.db())?;
+            app.backlinks_counter.flush(&app.db)?;
         }
 
         line_count += 1;
         tracing::debug!(from = source_display, to = action.uri, "backlink");
     }
 
-    app.flush_backlink_count(&app.db())?;
+    app.backlinks_counter.flush(&app.db)?;
     Ok(())
 }
