@@ -17,7 +17,7 @@ use backshots::{
     },
     get_app_config,
     http::{body_full, Body},
-    storage::live_guards::LiveStorageReaderGuard,
+    storage::live_guards::LiveReadHandle,
     AppConfig, AppContext,
 };
 
@@ -83,8 +83,8 @@ non-zplc dids: {}"#,
 
                 // TODO: read from compacted stores
 
-                for live_store_id in LiveStorageReaderGuard::all(&app)? {
-                    let mut storage = LiveStorageReaderGuard::new(&app, live_store_id)?;
+                for live_store_id in LiveReadHandle::all(&app)? {
+                    let mut storage = LiveReadHandle::new(&app, live_store_id)?;
                     storage.read_backlinks(&record_id, &mut backlinks)?;
                 }
 

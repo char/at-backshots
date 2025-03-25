@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, io::Cursor, time::Duration};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use crate::ingest::carslice::handle_carslice;
-use crate::storage::live_guards::LiveStorageWriterGuard;
+use crate::storage::live_guards::LiveWriteHandle;
 use crate::AppContext;
 use crate::{car::read_car_v1, storage::live::LiveStorageWriter};
 
@@ -20,7 +20,7 @@ pub async fn ingest_firehose(
     port: u16,
     tls: bool,
 ) -> Result<()> {
-    let mut storage = tokio::task::block_in_place(|| LiveStorageWriterGuard::latest(app))?;
+    let mut storage = tokio::task::block_in_place(|| LiveWriteHandle::latest(app))?;
     let mut event_count: u8 = 0;
 
     'reconnect: loop {
@@ -66,11 +66,10 @@ pub async fn ingest_firehose(
                     event_count += 1;
                     if event_count % 128 == 0 {
                         event_count = 0;
-                        if LiveStorageWriterGuard::latest_id(app).ok() != Some(storage.store_id) {
+                        if LiveWriteHandle::latest_id(app).ok() != Some(storage.store_id) {
                             tracing::info!("rolling over live storage");
 
-                            storage =
-                                tokio::task::block_in_place(|| LiveStorageWriterGuard::latest(app))?
+                            storage = tokio::task::block_in_place(|| LiveWriteHandle::latest(app))?
                         }
                     }
 

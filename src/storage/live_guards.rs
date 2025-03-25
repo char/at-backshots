@@ -1,31 +1,34 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    fs::File,
+    ops::{Deref, DerefMut},
+    path::PathBuf,
+};
 
 use anyhow::Result;
 
-use crate::{db::DbConnection, AppContext};
+use crate::AppContext;
 
 use super::live::{LiveStorageReader, LiveStorageWriter};
 
-pub struct LiveStorageWriterGuard {
-    db: DbConnection,
-    user_id: u64,
+pub struct LiveWriteHandle {
+    pidfile: PathBuf,
     pub store_id: u64,
     pub writer: LiveStorageWriter,
 }
 
-impl Deref for LiveStorageWriterGuard {
+impl Deref for LiveWriteHandle {
     type Target = LiveStorageWriter;
     fn deref(&self) -> &Self::Target {
         &self.writer
     }
 }
-impl DerefMut for LiveStorageWriterGuard {
+impl DerefMut for LiveWriteHandle {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.writer
     }
 }
 
-impl LiveStorageWriterGuard {
+impl LiveWriteHandle {
     pub fn add_new(app: &AppContext) -> Result<()> {
         app.db.execute(
             "INSERT INTO data_stores (name, type) VALUES (strftime('%Y%m%d%H%M%S', 'now'), 'live')",
@@ -45,11 +48,9 @@ impl LiveStorageWriterGuard {
     }
 
     pub fn latest(app: &AppContext) -> Result<Self> {
-        let db = app.connect_to_db()?;
-
         let (id, name) = {
             let find_row = || {
-                db.query_row(
+                app.db.query_row(
                     "SELECT id, name FROM data_stores WHERE type = 'live' ORDER BY id DESC LIMIT 1",
                     (),
                     |r| {
@@ -70,51 +71,42 @@ impl LiveStorageWriterGuard {
             }
         };
 
-        let user_id = {
-            db.execute(
-                "INSERT INTO data_store_users (data_store_id, node_id, mode) VALUES (?, ?, 'live')",
-                (id, app.node_id.to_string()),
-            )?;
-            db.last_insert_rowid() as u64
-        };
-
-        let writer = LiveStorageWriter::new(app.data_dir.join("live/").join(name))?;
+        let storage_dir = app.data_dir.join("live").join(name);
+        let writer = LiveStorageWriter::new(&storage_dir)?;
+        let pidfile = storage_dir.join(format!("{}.pid", std::process::id()));
+        File::create_new(&pidfile)?;
 
         Ok(Self {
-            user_id,
+            pidfile,
             store_id: id,
-            db,
             writer,
         })
     }
 }
 
-impl Drop for LiveStorageWriterGuard {
+impl Drop for LiveWriteHandle {
     fn drop(&mut self) {
-        self.db
-            .execute("DELETE FROM data_store_users WHERE id = ?", [self.user_id])
-            .expect("failed to release LiveStorageWriter guard!");
+        let _ = std::fs::remove_file(&self.pidfile);
     }
 }
 
-pub struct LiveStorageReaderGuard {
-    db: DbConnection,
-    user_id: u64,
+pub struct LiveReadHandle {
+    pidfile: PathBuf,
     pub reader: LiveStorageReader,
 }
-impl Deref for LiveStorageReaderGuard {
+impl Deref for LiveReadHandle {
     type Target = LiveStorageReader;
     fn deref(&self) -> &Self::Target {
         &self.reader
     }
 }
-impl DerefMut for LiveStorageReaderGuard {
+impl DerefMut for LiveReadHandle {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.reader
     }
 }
 
-impl LiveStorageReaderGuard {
+impl LiveReadHandle {
     pub fn all(app: &AppContext) -> Result<Vec<u64>> {
         let mut statement = app
             .db
@@ -135,27 +127,16 @@ impl LiveStorageReaderGuard {
             |row| row.get(0),
         )?;
 
-        let user_id = {
-            db.execute(
-                "INSERT INTO data_store_users (data_store_id, node_id, mode) VALUES (?, ?, 'live')",
-                (store_id, app.node_id.to_string()),
-            )?;
-            db.last_insert_rowid() as u64
-        };
+        let storage_dir = app.data_dir.join("live").join(name);
+        let reader = LiveStorageReader::new(&storage_dir)?;
+        let pidfile = storage_dir.join(format!("{}.pid", std::process::id()));
+        File::create_new(&pidfile)?;
 
-        let reader = LiveStorageReader::new(app.data_dir.join("live").join(name))?;
-
-        Ok(Self {
-            db,
-            user_id,
-            reader,
-        })
+        Ok(Self { pidfile, reader })
     }
 }
-impl Drop for LiveStorageReaderGuard {
+impl Drop for LiveReadHandle {
     fn drop(&mut self) {
-        self.db
-            .execute("DELETE FROM data_store_users WHERE id = ?", [self.user_id])
-            .expect("failed to release LiveStorageReader guard!");
+        let _ = std::fs::remove_file(&self.pidfile);
     }
 }

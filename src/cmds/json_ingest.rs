@@ -1,6 +1,6 @@
 use anyhow::Result;
 use backshots::{
-    get_app_config, ingest::likes_test::ingest_json, storage::live_guards::LiveStorageWriterGuard,
+    get_app_config, ingest::likes_test::ingest_json, storage::live_guards::LiveWriteHandle,
     AppContext,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -17,7 +17,7 @@ fn main() -> Result<()> {
 
     let cfg = get_app_config()?;
     let mut app = AppContext::new(&cfg)?;
-    let mut storage = LiveStorageWriterGuard::latest(&app)?;
+    let mut storage = LiveWriteHandle::latest(&app)?;
     ingest_json(&mut app, &mut storage)?;
 
     Ok(())
