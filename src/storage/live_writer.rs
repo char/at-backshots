@@ -170,87 +170,87 @@ impl LiveStorageWriter {
         Ok(())
     }
 
-    pub fn write_backlink(&mut self, target: &RecordId, source: &RecordId) -> Result<()> {
-        let mut new_entry = BacklinkEntry {
-            source: *source,
-            next: 0,
-            prev: 0,
+    fn alloc_entry_slot(&mut self) -> Result<u64> {
+        let index_raw_fd = self.index_file.as_raw_fd();
+        flock(index_raw_fd, FlockArg::LockExclusive).expect("failed to acquire index.dat lock");
+
+        let mut header: IndexHeader = {
+            let mut buf = [0u8; INDEX_HEADER_SIZE];
+            pread_all(&self.index_file, &mut buf, 0)?;
+            zerocopy::transmute!(buf)
         };
-        let new_entry_idx = {
-            let index_raw_fd = self.index_file.as_raw_fd();
-            flock(index_raw_fd, FlockArg::LockExclusive).expect("failed to acquire index.dat lock");
+        let cnt = header.num_records;
+        header.num_records += 1;
+        // allocate empty space at cnt
+        let pos = usize::try_from(cnt).unwrap() * BACKLINK_ENTRY_SIZE;
+        pwrite_all(&mut self.links_file, &[0u8; BACKLINK_ENTRY_SIZE], pos)?;
+        pwrite_all(&mut self.index_file, header.as_mut_bytes(), 0)?;
 
-            let mut header: IndexHeader = {
-                let mut buf = [0u8; INDEX_HEADER_SIZE];
-                pread_all(&self.index_file, &mut buf, 0)?;
-                zerocopy::transmute!(buf)
-            };
-            let cnt = header.num_records;
-            header.num_records += 1;
-            // allocate empty space at cnt
-            let pos = usize::try_from(cnt).unwrap() * BACKLINK_ENTRY_SIZE;
-            pwrite_all(&mut self.links_file, &[0u8; BACKLINK_ENTRY_SIZE], pos)?;
-            pwrite_all(&mut self.index_file, header.as_mut_bytes(), 0)?;
+        let _ = flock(index_raw_fd, FlockArg::Unlock);
 
-            let _ = flock(index_raw_fd, FlockArg::Unlock);
+        Ok(cnt)
+    }
 
-            cnt
-        };
-        let new_entry_pos = usize::try_from(new_entry_idx).unwrap() * BACKLINK_ENTRY_SIZE;
-
+    pub fn log_backlink(&mut self, target: &RecordId, source: &RecordId) -> Result<()> {
         if let Ok(mut index_value) = self.find_in_index(target) {
-            if index_value.head == u64::MAX {
-                index_value.head = new_entry_idx;
-            }
+            let mut tail_entry: Option<BacklinkEntry> = None;
+            let tail_slot = index_value.tail;
+            let tail_pos = usize::try_from(tail_slot).unwrap() * BACKLINK_ENTRY_SIZE;
 
-            // set prev to the end of the chain
             if index_value.tail != u64::MAX {
-                new_entry.prev = (index_value.tail as i64 - new_entry_idx as i64)
-                    .try_into()
-                    .unwrap();
-            }
-            pwrite_all(
-                &mut self.links_file,
-                new_entry.as_mut_bytes(),
-                new_entry_pos,
-            )?;
-
-            // update the 'next' at the end of the chain if we need to
-            if index_value.tail != u64::MAX {
-                let tail_entry_idx: usize = index_value.tail.try_into().unwrap();
-                let mut tail_entry: BacklinkEntry = {
+                let e: BacklinkEntry = {
                     let mut buf = [0u8; BACKLINK_ENTRY_SIZE];
-                    pread_all(
-                        &self.links_file,
-                        &mut buf,
-                        tail_entry_idx * BACKLINK_ENTRY_SIZE,
-                    )?;
+                    pread_all(&self.links_file, &mut buf, tail_pos)?;
                     zerocopy::transmute!(buf)
                 };
-                tail_entry.next = (new_entry_idx as i64 - index_value.tail as i64)
-                    .try_into()
-                    .unwrap();
-                pwrite_all(
-                    &mut self.links_file,
-                    tail_entry.as_mut_bytes(),
-                    tail_entry_idx * BACKLINK_ENTRY_SIZE,
-                )?;
+                if &e.source == source {
+                    // we can cheaply avoid writing a duplicate entry here
+                    return Ok(());
+                }
+                tail_entry.replace(e);
             }
 
-            // update the index entry on disk
-            index_value.tail = new_entry_idx;
+            let mut new_entry = BacklinkEntry {
+                source: *source,
+                next: 0,
+                prev: 0,
+            };
+            let slot = self.alloc_entry_slot()?;
+            let pos = usize::try_from(slot).unwrap() * BACKLINK_ENTRY_SIZE;
+
+            if index_value.head == u64::MAX {
+                index_value.head = slot;
+            }
+
+            // set prev to the previous end of the chain
+            if index_value.tail != u64::MAX {
+                new_entry.prev = (tail_slot as i64 - slot as i64).try_into().unwrap();
+            }
+            pwrite_all(&mut self.links_file, new_entry.as_mut_bytes(), pos)?;
+
+            // update the 'next' at the end of the chain if we need to
+            if let Some(mut tail_entry) = tail_entry {
+                tail_entry.next = (slot as i64 - tail_slot as i64).try_into().unwrap();
+                pwrite_all(&mut self.links_file, tail_entry.as_mut_bytes(), tail_pos)?;
+            }
+
+            // update end of the chain
+            index_value.tail = slot;
             self.update_index(target, index_value)?;
         } else {
-            pwrite_all(
-                &mut self.links_file,
-                new_entry.as_mut_bytes(),
-                new_entry_pos,
-            )?;
+            let mut new_entry = BacklinkEntry {
+                source: *source,
+                next: 0,
+                prev: 0,
+            };
+            let slot = self.alloc_entry_slot()?;
+            let pos = usize::try_from(slot).unwrap() * BACKLINK_ENTRY_SIZE;
+            pwrite_all(&mut self.links_file, new_entry.as_mut_bytes(), pos)?;
             self.add_to_index(
                 target,
                 IndexValue {
-                    head: new_entry_idx,
-                    tail: new_entry_idx,
+                    head: slot,
+                    tail: slot,
                     idx: self.index_btree.len() as u64,
                 },
             )?;

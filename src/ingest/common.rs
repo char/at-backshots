@@ -60,7 +60,7 @@ pub fn handle_backlinks(
                 tracing::debug!(from = source_display, to = uri, "backlink");
 
                 // TODO: we probably shouldnt block the runtime like this but whatever
-                storage.write_backlink(&target, &source)?;
+                storage.log_backlink(&target, &source)?;
                 app.backlinks_counter.add(1);
             }
             Err(e) => tracing::warn!("failed to create RecordId: {:?}", e),

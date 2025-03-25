@@ -79,7 +79,7 @@ pub fn ingest_json(app: &mut AppContext, mut storage: LiveStorageWriter) -> Resu
         );
         let source_display = format!("at://{}/app.bsky.feed.like/{}", &action.did, &action.rkey);
         let target = RecordId::from_at_uri(app, &action.uri)?;
-        storage.write_backlink(&target, &source)?;
+        storage.log_backlink(&target, &source)?;
         app.backlinks_counter.add(1);
 
         if line_count % 4096 == 0 {
