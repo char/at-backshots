@@ -25,6 +25,7 @@ tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-webpki-roots"]
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 unsigned-varint = "0.8.0"
+uuid = { version = "1.16.0", features = ["v4"] }
 webpki-roots = "0.26.8"
 zerocopy = { version = "0.8.23", features = ["derive", "std"] }
 

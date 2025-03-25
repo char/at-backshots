@@ -1,6 +1,7 @@
 use anyhow::Result;
 use backshots::{
-    ingest::likes_test::ingest_json, storage::live::LiveStorageWriter, AppConfig, AppContext,
+    get_app_config, ingest::likes_test::ingest_json, storage::guards::LiveStorageWriterGuard,
+    AppContext,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -14,14 +15,10 @@ fn main() -> Result<()> {
         )
         .init();
 
-    let cfg = AppConfig {
-        zplc_base: "http://127.0.0.1:2485".into(),
-        data_dir: "/dev/shm/backshots/data".into(),
-    };
+    let cfg = get_app_config()?;
     let mut app = AppContext::new(&cfg)?;
-
-    let storage = LiveStorageWriter::new("/dev/shm/backshots/data")?;
-    ingest_json(&mut app, storage)?;
+    let mut storage = LiveStorageWriterGuard::latest(&app)?;
+    ingest_json(&mut app, &mut storage)?;
 
     Ok(())
 }

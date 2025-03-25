@@ -58,7 +58,7 @@ impl FromStr for Action {
     }
 }
 
-pub fn ingest_json(app: &mut AppContext, mut storage: LiveStorageWriter) -> Result<()> {
+pub fn ingest_json(app: &mut AppContext, storage: &mut LiveStorageWriter) -> Result<()> {
     let f = File::open("./target/likes5-simple.jsonl")?;
     let reader = BufReader::new(f);
 

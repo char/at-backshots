@@ -41,16 +41,16 @@ pub fn setup_db(db: &DbConnection) -> Result<()> {
     db.execute(
         "CREATE TABLE IF NOT EXISTS data_stores (
     id INTEGER PRIMARY KEY,
-    path TEXT NOT NULL,
-    type TEXT NOT NULL -- 'live' | 'compacted'
+    name TEXT NOT NULL,
+    type TEXT NOT NULL -- 'live' | 'compacted' | 'compacting'
 ) STRICT",
         (),
     )?;
     db.execute(
-        "CREATE TABLE IF NOT EXISTS data_stores (
-    id INTEGER PRIMARY KEY,
-    path TEXT NOT NULL,
-    type TEXT NOT NULL -- 'live' | 'compacted'
+        "CREATE TABLE IF NOT EXISTS data_store_users (
+        id INTEGER PRIMARY KEY,
+        data_store_id INTEGER NOT NULL,
+        node_id TEXT NOT NULL
 ) STRICT",
         (),
     )?;

@@ -67,6 +67,8 @@ pub struct LiveStorageWriter {
 
 impl LiveStorageWriter {
     pub fn new(dir: impl AsRef<Path>) -> Result<Self> {
+        let _ = std::fs::create_dir_all(&dir);
+
         let base_options = File::options()
             .create(true)
             .truncate(false)

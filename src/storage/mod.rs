@@ -4,6 +4,7 @@ use anyhow::Result;
 use nix::{libc::off_t, sys::uio};
 
 pub mod compacted;
+pub mod guards;
 pub mod live;
 
 pub fn pread_all(fd: impl AsFd, buf: &mut [u8], offset: usize) -> Result<()> {

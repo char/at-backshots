@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use counter::MonotonicCounter;
 use db::{setup_db, DbCaches, DbConnection};
+use uuid::Uuid;
 use zplc_client::ZplcResolver;
 
 pub mod car;
@@ -32,6 +33,10 @@ pub fn get_app_config() -> Result<AppConfig> {
 }
 
 pub struct AppContext {
+    pub node_id: Uuid,
+
+    pub data_dir: PathBuf,
+    pub db_path: PathBuf,
     pub db: DbConnection,
     pub caches: DbCaches,
 
@@ -42,10 +47,18 @@ pub struct AppContext {
 }
 impl AppContext {
     pub fn new(cfg: &AppConfig) -> Result<Self> {
+        let node_id = Uuid::new_v4();
+        tracing::info!(%node_id, "creating new node…");
+
         let _ = std::fs::create_dir_all(&cfg.data_dir);
-        let db = DbConnection::open(cfg.data_dir.join("db"))?;
+        let db_path = cfg.data_dir.join("db");
+        let db = DbConnection::open(&db_path)?;
         setup_db(&db)?;
         Ok(Self {
+            node_id,
+
+            data_dir: cfg.data_dir.clone(),
+            db_path,
             db,
             caches: DbCaches::default(),
 
@@ -57,5 +70,9 @@ impl AppContext {
                 .enable_io()
                 .build()?,
         })
+    }
+
+    pub fn connect_to_db(&self) -> Result<DbConnection> {
+        Ok(DbConnection::open(&self.db_path)?)
     }
 }

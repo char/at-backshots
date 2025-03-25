@@ -62,6 +62,8 @@ pub struct CompactedStorageWriter {
 
 impl CompactedStorageWriter {
     pub fn new(dir: impl AsRef<Path>) -> Result<Self> {
+        let _ = std::fs::create_dir_all(&dir);
+
         let index = File::options()
             .create(true)
             .append(true)
