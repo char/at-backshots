@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use counter::MonotonicCounter;
 use db::{setup_db, DbCaches, DbConnection};
+use tokio::runtime::{Handle, Runtime};
 use uuid::Uuid;
 use zplc_client::ZplcResolver;
 
@@ -43,10 +44,27 @@ pub struct AppContext {
     pub zplc_resolver: ZplcResolver,
     pub backlinks_counter: MonotonicCounter,
 
-    pub tokio_rt: tokio::runtime::Runtime,
+    owned_tokio_rt: Option<Box<tokio::runtime::Runtime>>,
+    pub async_handle: Handle,
 }
 impl AppContext {
     pub fn new(cfg: &AppConfig) -> Result<Self> {
+        Self::new_with_runtime(
+            cfg,
+            tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .build()?,
+        )
+    }
+
+    pub fn new_with_runtime(cfg: &AppConfig, runtime: Runtime) -> Result<Self> {
+        let handle = runtime.handle().clone();
+        let mut ctx = Self::new_with_handle(cfg, handle)?;
+        ctx.owned_tokio_rt = Some(Box::new(runtime));
+        Ok(ctx)
+    }
+
+    pub fn new_with_handle(cfg: &AppConfig, async_handle: Handle) -> Result<Self> {
         let node_id = Uuid::new_v4();
 
         let _ = std::fs::create_dir_all(&cfg.data_dir);
@@ -65,9 +83,8 @@ impl AppContext {
                 base: cfg.zplc_base.clone(),
             },
             backlinks_counter: MonotonicCounter::new("backlinks"),
-            tokio_rt: tokio::runtime::Builder::new_current_thread()
-                .enable_io()
-                .build()?,
+            owned_tokio_rt: None,
+            async_handle,
         })
     }
 
