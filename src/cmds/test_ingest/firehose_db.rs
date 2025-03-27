@@ -9,7 +9,7 @@ use ipld_core::ipld::Ipld;
 
 pub fn ingest_firehose_db(app: &mut AppContext, storage: &mut LiveStorageWriter) -> Result<()> {
     let snapshot = rusqlite::Connection::open_with_flags(
-        "./target/firehose_snapshot.db",
+        "./target/firehose_snapshot_01.db",
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )?;
     let mut stmt = snapshot.prepare("SELECT seq, aturi, value FROM records")?;
