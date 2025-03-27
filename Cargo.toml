@@ -38,8 +38,8 @@ name = "firehose-ingest"
 path = "src/cmds/firehose_ingest.rs"
 
 [[bin]]
-name = "json-ingest"
-path = "src/cmds/json_ingest.rs"
+name = "test-ingest"
+path = "src/cmds/test_ingest/main.rs"
 
 [[bin]]
 name = "repo-ingest"

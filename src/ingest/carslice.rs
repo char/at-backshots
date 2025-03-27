@@ -8,7 +8,7 @@ use ipld_core::{cid::Cid, ipld::Ipld};
 
 use crate::{car::CarFile, storage::live::LiveStorageWriter, AppContext};
 
-use super::common::handle_backlinks;
+use super::{common::handle_backlinks, record::get_backlinks};
 
 pub fn handle_carslice<R: Read + Seek>(
     app: &mut AppContext,
@@ -32,21 +32,7 @@ pub fn handle_carslice<R: Read + Seek>(
         };
 
         let ipld = serde_ipld_dagcbor::from_slice::<Ipld>(&cbor)?;
-
-        let mut backlinks = HashSet::<(&str, &str)>::new();
-
-        for child in ipld.iter() {
-            // a StrongRef is an Ipld::Map with "cid" and "uri"
-            let Ipld::Map(map) = child else {
-                continue;
-            };
-            if let (Some(Ipld::String(cid)), Some(Ipld::String(uri))) =
-                (map.get("cid"), map.get("uri"))
-            {
-                backlinks.insert((cid, uri));
-            }
-        }
-
+        let backlinks = get_backlinks(&ipld)?;
         handle_backlinks(app, storage, &repo, collection, rkey, backlinks)?;
     }
 

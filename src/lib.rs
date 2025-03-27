@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{future::Future, path::PathBuf};
 
 use anyhow::Result;
 use counter::MonotonicCounter;
@@ -86,6 +86,14 @@ impl AppContext {
             owned_tokio_rt: None,
             async_handle,
         })
+    }
+
+    pub fn async_block_on<F: Future>(&self, future: F) -> F::Output {
+        if let Some(rt) = self.owned_tokio_rt.as_ref() {
+            rt.block_on(future)
+        } else {
+            self.async_handle.block_on(future)
+        }
     }
 
     pub fn connect_to_db(&self) -> Result<DbConnection> {

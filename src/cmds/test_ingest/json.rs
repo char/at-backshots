@@ -7,7 +7,7 @@ use std::{
 use anyhow::{anyhow, Result};
 use tinyjson::JsonValue;
 
-use crate::{
+use backshots::{
     data::{
         did::encode_did,
         record::{encode_collection, encode_rkey, RecordId},
