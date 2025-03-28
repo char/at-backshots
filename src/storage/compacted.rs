@@ -176,7 +176,7 @@ impl CompactedStorageReader {
         let mut start = 0;
         let mut end = header.num_entries as usize;
         loop {
-            let i = start + (start + end) / 2;
+            let i = start + (end - start) / 2;
 
             let entry: RecordIndexEntry = {
                 let mut entry_buf = [0u8; INDEX_ENTRY_SIZE];
@@ -190,7 +190,7 @@ impl CompactedStorageReader {
                 Ordering::Equal => return Ok(Some(entry)),
             }
 
-            if end >= start {
+            if start >= end {
                 break;
             }
         }
