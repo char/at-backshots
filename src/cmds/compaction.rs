@@ -24,5 +24,11 @@ fn main() -> Result<()> {
         writer.log_backlinks(&target, &sources)?;
     }
 
+    let db = rusqlite::Connection::open(cfg.data_dir.join("db"))?;
+    db.execute(
+        "UPDATE data_stores SET type = 'compacted' WHERE name = ?",
+        [target],
+    )?;
+
     Ok(())
 }

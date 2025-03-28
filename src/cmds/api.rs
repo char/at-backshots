@@ -17,7 +17,7 @@ use backshots::{
     },
     get_app_config,
     http::{body_full, Body},
-    storage::live_guards::LiveReadHandle,
+    storage::{compacted::CompactedStorageReader, live_guards::LiveReadHandle},
     AppConfig, AppContext,
 };
 
@@ -79,10 +79,31 @@ non-zplc dids: {}"#,
             };
 
             let mut sources = BTreeSet::<RecordId>::new();
-            // TODO: read from compacted stores
-            for live_store_id in LiveReadHandle::all(&app)? {
-                let mut storage = LiveReadHandle::new(&app, live_store_id)?;
-                storage.read_backlinks(&record_id, &mut sources)?;
+            {
+                // TODO: we should be able to persist the open stores per-thread
+                // and then only refresh them periodically instead of opening them on every request
+
+                let mut statement = app
+                    .db
+                    .prepare("SELECT id, name, type FROM data_stores ORDER BY id ASC")?;
+                let stores = statement.query_map((), |row| {
+                    let id: u64 = row.get(0)?;
+                    let name: String = row.get(1)?;
+                    let type_ = row.get_ref(2)?;
+                    let is_live = type_.as_str()?.eq("live");
+                    Ok((id, name, is_live))
+                })?;
+                for store in stores {
+                    let (_store_id, name, is_live) = store?;
+                    if is_live {
+                        let mut storage = LiveReadHandle::new(&app, name)?;
+                        storage.read_backlinks(&record_id, &mut sources)?;
+                    } else {
+                        let mut storage =
+                            CompactedStorageReader::new(app.data_dir.join("compacted").join(name))?;
+                        storage.read_backlinks(&record_id, &mut sources)?;
+                    }
+                }
             }
 
             let mut backlink_uris = BTreeMap::<String, BTreeSet<String>>::new();

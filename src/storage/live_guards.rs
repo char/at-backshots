@@ -107,26 +107,7 @@ impl DerefMut for LiveReadHandle {
 }
 
 impl LiveReadHandle {
-    pub fn all(app: &AppContext) -> Result<Vec<u64>> {
-        let mut statement = app
-            .db
-            .prepare("SELECT id FROM data_stores WHERE type = 'live' ORDER BY id ASC")?;
-        let v = statement
-            .query_map((), |row| row.get::<_, u64>(0))?
-            .filter_map(Result::ok)
-            .collect();
-        Ok(v)
-    }
-
-    pub fn new(app: &AppContext, store_id: u64) -> Result<Self> {
-        let db = app.connect_to_db()?;
-
-        let name: String = db.query_row(
-            "SELECT name FROM data_stores WHERE id = ? AND type = 'live'",
-            [store_id],
-            |row| row.get(0),
-        )?;
-
+    pub fn new(app: &AppContext, name: String) -> Result<Self> {
         let storage_dir = app.data_dir.join("live").join(name);
         let reader = LiveStorageReader::new(&storage_dir)?;
         let pidfile = storage_dir.join(format!("{}.pid", std::process::id()));
