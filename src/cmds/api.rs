@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     net::SocketAddr,
     sync::Arc,
 };
@@ -78,38 +78,59 @@ non-zplc dids: {}"#,
                     .body(body_full("'uri' param was not a valid at-uri"))?);
             };
 
-            let backlink_uris = tokio::task::block_in_place(|| -> anyhow::Result<_> {
-                let mut backlinks = BTreeSet::<RecordId>::new();
+            let mut sources = BTreeSet::<RecordId>::new();
+            // TODO: read from compacted stores
+            for live_store_id in LiveReadHandle::all(&app)? {
+                let mut storage = LiveReadHandle::new(&app, live_store_id)?;
+                storage.read_backlinks(&record_id, &mut sources)?;
+            }
 
-                // TODO: read from compacted stores
+            let mut backlink_uris = BTreeMap::<String, BTreeSet<String>>::new();
+            for source in sources {
+                let did = resolve_did(&app, source.did)?;
+                let collection = resolve_collection(&app, source.collection)?;
+                let rkey = resolve_rkey(&app, source.rkey)?;
+                let links = backlink_uris.entry(collection.clone()).or_default();
+                links.insert(format!("at://{did}/{collection}/{rkey}"));
+            }
 
-                for live_store_id in LiveReadHandle::all(&app)? {
-                    let mut storage = LiveReadHandle::new(&app, live_store_id)?;
-                    storage.read_backlinks(&record_id, &mut backlinks)?;
+            // manually stringify the json just because we know the exact shape,
+            // + putting the data into tinyjson means converting BTreeMaps
+            // into HashMaps and BTreeSets into Vecs :/
+            let json = {
+                let mut json = String::new();
+                json.push('{');
+
+                let mut first = true;
+                for (collection, links) in backlink_uris {
+                    if !first {
+                        json.push(',');
+                    }
+                    first = false;
+
+                    json.push_str(&tinyjson::JsonValue::String(collection).stringify()?);
+                    json.push(':');
+
+                    json.push('[');
+                    {
+                        let mut first = true;
+                        for link in links {
+                            if !first {
+                                json.push(',');
+                            }
+                            first = false;
+                            json.push_str(&tinyjson::JsonValue::String(link).stringify()?);
+                        }
+                    }
+                    json.push(']');
                 }
-
-                let mut backlink_uris = BTreeSet::<String>::new();
-                for source in backlinks {
-                    let did = resolve_did(&app, source.did)?;
-                    let collection = resolve_collection(&app, source.collection)?;
-                    let rkey = resolve_rkey(&app, source.rkey)?;
-                    backlink_uris.insert(format!("at://{did}/{collection}/{rkey}"));
-                }
-
-                Ok(backlink_uris)
-            })?;
+                json.push('}');
+                json
+            };
 
             Ok(Response::builder()
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(body_full(
-                    tinyjson::JsonValue::Array(
-                        backlink_uris
-                            .into_iter()
-                            .map(tinyjson::JsonValue::String)
-                            .collect(),
-                    )
-                    .stringify()?,
-                ))?)
+                .body(body_full(json))?)
         }
 
         _ => Ok(Response::builder()
