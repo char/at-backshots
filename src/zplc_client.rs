@@ -1,44 +1,27 @@
 use anyhow::Result;
-use http_body_util::BodyExt;
-use hyper::{Request, StatusCode};
 
-use crate::{http::body_empty, http::client::fetch};
-
-pub struct ZplcResolver {
-    pub base: String,
+pub struct ZplcDirectResolver {
+    pub conn: rusqlite::Connection,
 }
 
-impl ZplcResolver {
-    pub async fn zplc_to_did(&self, id: u64) -> Result<String> {
-        let base = &self.base;
-        let req = Request::builder()
-            .method("GET")
-            .uri(format!("{base}/{id}"))
-            .body(body_empty())?;
-        let res = fetch(req).await?;
-        if !res.status().is_success() {
-            anyhow::bail!("got non-success response: {}", res.status());
-        }
-        let body = res.collect().await?.to_bytes();
-        let did = String::from_utf8(body.to_vec())?;
+impl ZplcDirectResolver {
+    pub fn zplc_to_did(&self, id: u64) -> Result<String> {
+        let mut statement = self
+            .conn
+            .prepare_cached("SELECT did FROM plc_idents WHERE id = ?")?;
+        let did: String = statement.query_row([id], |row| row.get(0))?;
         Ok(did)
     }
 
-    pub async fn lookup_zplc(&self, did: &str) -> Result<Option<u64>> {
-        let zplc_server = &self.base;
-        let req = Request::builder()
-            .method("GET")
-            .uri(format!("{zplc_server}/{did}"))
-            .body(body_empty())?;
-        let res = fetch(req).await?;
-        if res.status() == StatusCode::NOT_FOUND {
-            return Ok(None);
-        } else if !res.status().is_success() {
-            anyhow::bail!("got non-success response: {}", res.status());
-        }
-        let body = res.collect().await?.to_bytes();
-        let zplc_str = String::from_utf8(body.to_vec())?;
-        let zplc_n: u64 = zplc_str.parse()?;
-        Ok(Some(zplc_n))
+    pub fn lookup_zplc(&self, did: &str) -> Result<Option<u64>> {
+        let mut statement = self
+            .conn
+            .prepare_cached("SELECT id FROM plc_idents WHERE did = ?")?;
+        let id: Option<u64> = match statement.query_row([did], |row| row.get(0)) {
+            Ok(v) => Some(v),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(e) => return Err(e.into()),
+        };
+        Ok(id)
     }
 }

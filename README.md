@@ -7,7 +7,8 @@ don't run this just yet!
 
 ## requirements
 
-- zplc server listening at 127.0.0.1:2485
+- an up-to-date [zplc-server](https://github.com/char/zplc-server) as a sibling directory
+  - backshots now directly accesses the database file; so you only need to ingest, not serve.
 
 ## goals
 

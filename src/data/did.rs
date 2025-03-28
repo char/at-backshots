@@ -8,7 +8,8 @@ pub const DID_FLAG_NON_STANDARD: u64 = 1 << 63;
 
 pub fn resolve_did(app: &AppContext, did: u64) -> Result<String> {
     if did & DID_FLAG_NON_STANDARD == 0 {
-        return app.async_block_on(app.zplc_resolver.zplc_to_did(did));
+        // return app.async_block_on(app.zplc_resolver.zplc_to_did(did));
+        return app.zplc_direct_resolver.zplc_to_did(did);
     }
 
     let did: String = app.db.query_row(
@@ -21,7 +22,10 @@ pub fn resolve_did(app: &AppContext, did: u64) -> Result<String> {
 
 pub fn encode_existing_did(app: &AppContext, did: &str) -> Result<Option<u64>> {
     if did.starts_with("did:plc:") {
-        if let Ok(Some(zplc)) = app.async_block_on(app.zplc_resolver.lookup_zplc(did)) {
+        /* if let Ok(Some(zplc)) = app.async_block_on(app.zplc_resolver.lookup_zplc(did)) {
+            return Ok(Some(zplc));
+        } */
+        if let Ok(Some(zplc)) = app.zplc_direct_resolver.lookup_zplc(did) {
             return Ok(Some(zplc));
         }
     }

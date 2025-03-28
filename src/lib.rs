@@ -1,11 +1,10 @@
-use std::{future::Future, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use counter::MonotonicCounter;
 use db::{setup_db, DbCaches, DbConnection};
-use tokio::runtime::{Handle, Runtime};
 use uuid::Uuid;
-use zplc_client::ZplcResolver;
+use zplc_client::ZplcDirectResolver;
 
 pub mod car;
 pub mod mst;
@@ -21,14 +20,14 @@ pub mod tid;
 pub mod zplc_client;
 
 pub struct AppConfig {
-    pub zplc_base: String,
+    pub zplc_path: String,
     pub data_dir: PathBuf,
 }
 
 pub fn get_app_config() -> Result<AppConfig> {
     // TODO: read from environment variables or whatever
     Ok(AppConfig {
-        zplc_base: "http://127.0.0.1:2485".into(),
+        zplc_path: "../zplc-server/data/ids.db".into(),
         data_dir: "/dev/shm/backshots/data".into(),
     })
 }
@@ -41,30 +40,11 @@ pub struct AppContext {
     pub db: DbConnection,
     pub caches: DbCaches,
 
-    pub zplc_resolver: ZplcResolver,
+    pub zplc_direct_resolver: ZplcDirectResolver,
     pub backlinks_counter: MonotonicCounter,
-
-    owned_tokio_rt: Option<Box<tokio::runtime::Runtime>>,
-    pub async_handle: Handle,
 }
 impl AppContext {
     pub fn new(cfg: &AppConfig) -> Result<Self> {
-        Self::new_with_runtime(
-            cfg,
-            tokio::runtime::Builder::new_current_thread()
-                .enable_io()
-                .build()?,
-        )
-    }
-
-    pub fn new_with_runtime(cfg: &AppConfig, runtime: Runtime) -> Result<Self> {
-        let handle = runtime.handle().clone();
-        let mut ctx = Self::new_with_handle(cfg, handle)?;
-        ctx.owned_tokio_rt = Some(Box::new(runtime));
-        Ok(ctx)
-    }
-
-    pub fn new_with_handle(cfg: &AppConfig, async_handle: Handle) -> Result<Self> {
         let node_id = Uuid::new_v4();
 
         let _ = std::fs::create_dir_all(&cfg.data_dir);
@@ -79,21 +59,11 @@ impl AppContext {
             db,
             caches: DbCaches::default(),
 
-            zplc_resolver: ZplcResolver {
-                base: cfg.zplc_base.clone(),
+            zplc_direct_resolver: ZplcDirectResolver {
+                conn: rusqlite::Connection::open(cfg.zplc_path.clone())?,
             },
             backlinks_counter: MonotonicCounter::new("backlinks"),
-            owned_tokio_rt: None,
-            async_handle,
         })
-    }
-
-    pub fn async_block_on<F: Future>(&self, future: F) -> F::Output {
-        if let Some(rt) = self.owned_tokio_rt.as_ref() {
-            rt.block_on(future)
-        } else {
-            self.async_handle.block_on(future)
-        }
     }
 
     pub fn connect_to_db(&self) -> Result<DbConnection> {

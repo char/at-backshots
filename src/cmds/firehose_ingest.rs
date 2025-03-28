@@ -1,5 +1,4 @@
 use backshots::{firehose::ingest_firehose, get_app_config, AppContext};
-use tokio::runtime::Handle;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
@@ -14,7 +13,7 @@ pub async fn main() -> anyhow::Result<()> {
         .init();
 
     let cfg = get_app_config()?;
-    let mut app = AppContext::new_with_handle(&cfg, Handle::current())?;
+    let mut app = AppContext::new(&cfg)?;
     let ingest = async move {
         match ingest_firehose(&mut app, "bsky.network", 443, true).await {
             Ok(_) => {}
