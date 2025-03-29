@@ -28,7 +28,7 @@ pub fn get_app_config() -> Result<AppConfig> {
     // TODO: read from environment variables or whatever
     Ok(AppConfig {
         zplc_path: "../zplc-server/data/ids.db".into(),
-        data_dir: "/dev/shm/backshots/data".into(),
+        data_dir: "./data".into(),
     })
 }
 
