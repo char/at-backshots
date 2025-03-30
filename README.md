@@ -9,6 +9,7 @@ don't run this just yet!
 
 - an up-to-date [zplc-server](https://github.com/char/zplc-server) as a sibling directory
   - backshots now directly accesses the database file; so you only need to ingest, not serve.
+  - for backfill, you will want to run serve-plc.ts at 127.0.0.1:
 
 ## goals
 

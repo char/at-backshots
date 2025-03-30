@@ -18,7 +18,7 @@ pub fn ingest_repo_archive<R: Read + Seek>(
     storage: &mut LiveStorageWriter,
     repo: String,
     reader: &mut R,
-) -> Result<()> {
+) -> Result<String> {
     let car = read_car_v1(reader)?;
 
     let commit_cid = car.roots.first().copied().unwrap();
@@ -63,5 +63,5 @@ pub fn ingest_repo_archive<R: Read + Seek>(
 
     handle_carslice(app, storage, repo, reader, &car, &records)?;
 
-    Ok(())
+    Ok(commit.node.rev)
 }

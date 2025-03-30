@@ -56,3 +56,7 @@ path = "src/cmds/live_rollover.rs"
 [[bin]]
 name = "compaction"
 path = "src/cmds/compaction.rs"
+
+[[bin]]
+name = "backfill"
+path = "src/cmds/backfill/main.rs"
