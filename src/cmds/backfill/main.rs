@@ -7,22 +7,15 @@ use backshots::{
     http::{body_empty, client::fetch},
     ingest::repo_car::ingest_repo_archive,
     storage::{live::LiveStorageWriter, live_guards::LiveWriteHandle},
-    AppConfig, AppContext,
+    AppContext,
 };
+use db::open_backfill_db;
 use http_body_util::BodyExt;
 use hyper::{header, Request};
-use rusqlite::{fallible_iterator::FallibleIterator, Batch, Connection};
 use tinyjson::JsonValue;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-fn open_backfill_db(cfg: &AppConfig) -> Result<Connection> {
-    let backfill_db = Connection::open(cfg.data_dir.join("backfill.db"))?;
-    let mut batch = Batch::new(&backfill_db, include_str!("./db.sql"));
-    while let Some(mut stmt) = batch.next()? {
-        stmt.execute(())?;
-    }
-    Ok(backfill_db)
-}
+mod db;
 
 async fn get_did_document(did: &str) -> Result<JsonValue> {
     let did_doc: JsonValue = if did.starts_with("did:plc:") {
@@ -149,24 +142,27 @@ async fn main() -> Result<()> {
 
     let backfill_db = open_backfill_db(&cfg)?;
 
-    let mut create_outdated =
+    /* let mut create_outdated =
         backfill_db.prepare("INSERT OR IGNORE INTO repos (did) VALUES (?)")?;
     for zplc in 1..=1_000 {
-        let _did = resolve_did(&app, zplc)?;
         let _ = create_outdated.execute([zplc])?;
-    }
+    } */
 
-    // TODO: parallelize (low key we can do as many concurrent requests as there are PDSes)
-    let mut query_for_row =
-        backfill_db.prepare("SELECT did, since FROM repos WHERE status = 'outdated' LIMIT 1")?;
+    let mut query_for_row = backfill_db.prepare(
+        "UPDATE repos
+        SET status = 'processing'
+        WHERE id in (SELECT id FROM repos
+            WHERE status = 'outdated' LIMIT 1)
+        RETURNING did, since",
+    )?;
     let mut update_row_status = backfill_db.prepare("UPDATE repos SET status = ? WHERE did = ?")?;
     let mut update_since = backfill_db.prepare("UPDATE repos SET since = ? WHERE did = ?")?;
 
+    // TODO: parallelize (low key we can do as many concurrent requests as there are PDSes)
     loop {
         let (did_id, since) = query_for_row.query_row((), |row| {
             Ok((row.get::<_, u64>(0)?, row.get::<_, Option<String>>(1)?))
         })?;
-        update_row_status.execute((did_id, "processing"))?;
         let mut storage = LiveWriteHandle::latest(&app)?;
         match handle_queue_entry(&mut app, &mut storage, did_id, since).await {
             Ok(rev) => {
