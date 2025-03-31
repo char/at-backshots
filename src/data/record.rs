@@ -20,7 +20,7 @@ pub struct RecordId {
     pub rkey: u64,
     pub collection: u32,
     pub did: u64,
-    pub _flags: u32,
+    pub _flags: RecordIdFlags,
 }
 
 impl RecordId {
@@ -29,7 +29,7 @@ impl RecordId {
             rkey,
             collection,
             did,
-            _flags: 0,
+            _flags: 0.into(),
         }
     }
 }
@@ -128,4 +128,29 @@ pub fn resolve_collection(app: &AppContext, coll: RecordCollection) -> Result<St
         .context("could not find collection id in colls tree")?;
 
     Ok(collection)
+}
+
+#[derive(Clone, Copy, IntoBytes, FromBytes, Immutable)]
+#[repr(transparent)]
+pub struct RecordIdFlags(u32);
+impl PartialEq for RecordIdFlags {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+impl Eq for RecordIdFlags {}
+impl Ord for RecordIdFlags {
+    fn cmp(&self, _other: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+impl PartialOrd for RecordIdFlags {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl From<u32> for RecordIdFlags {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
 }
