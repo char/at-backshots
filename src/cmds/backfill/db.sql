@@ -3,9 +3,11 @@ CREATE TABLE IF NOT EXISTS repos (
   id INTEGER PRIMARY KEY NOT NULL,
   did INTEGER UNIQUE NOT NULL, -- fk to zplc or db/outline_dids
   since TEXT DEFAULT NULL,
-  status TEXT NOT NULL DEFAULT 'outdated' -- 'outdated' | 'processing' | 'done' | 'failed'
+  updated REAL NOT NULL DEFAULT (unixepoch('now', 'subsec')),
+  status TEXT NOT NULL DEFAULT 'outdated' -- 'outdated' | 'processing' | 'done' | 'errored'
 ) STRICT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repos_did ON repos (did);
+CREATE INDEX IF NOT EXISTS idx_repos_updated ON REPOS (updated);
 
 CREATE TABLE IF NOT EXISTS event_queue (
   id INTEGER PRIMARY KEY NOT NULL,

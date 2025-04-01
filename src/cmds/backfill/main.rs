@@ -9,7 +9,7 @@ use backshots::{
     storage::{live::LiveStorageWriter, live_guards::LiveWriteHandle},
     AppContext,
 };
-use db::open_backfill_db;
+use db::{convert_did_from_db, convert_did_to_db, open_backfill_db};
 use http_body_util::BodyExt;
 use hyper::{header, Request};
 use tinyjson::JsonValue;
@@ -72,13 +72,13 @@ async fn get_did_document(did: &str) -> Result<JsonValue> {
 async fn handle_queue_entry(
     app: &mut AppContext,
     storage: &mut LiveStorageWriter,
-    did_id: u64,
+    did: u64,
     since: Option<String>,
 ) -> Result<String> {
-    let did = resolve_did(app, did_id)?;
-    tracing::info!(%did, ?since, "ingesting repo");
+    let did_string = resolve_did(app, did)?;
+    tracing::info!(did = %did_string, ?since, "ingesting repo");
 
-    let did_doc = get_did_document(&did).await?;
+    let did_doc = get_did_document(&did_string).await?;
     let JsonValue::Array(service) = &did_doc["service"] else {
         anyhow::bail!("did doc `service` was not array")
     };
@@ -96,7 +96,7 @@ async fn handle_queue_entry(
     };
 
     let res = {
-        let mut uri = format!("{service_endpoint}/xrpc/com.atproto.sync.getRepo?did={did}");
+        let mut uri = format!("{service_endpoint}/xrpc/com.atproto.sync.getRepo?did={did_string}");
         if let Some(since) = since {
             uri.push_str("&since=");
             uri.push_str(&since);
@@ -121,7 +121,9 @@ async fn handle_queue_entry(
     let repo = res.into_body().collect().await?;
     let mut repo = repo.to_bytes();
     let mut repo_cursor = std::io::Cursor::new(&mut repo);
-    let rev = ingest_repo_archive(app, storage, did, &mut repo_cursor)?;
+    let rev = ingest_repo_archive(app, storage, did_string.clone(), &mut repo_cursor)?;
+
+    tracing::info!(did = %did_string, %rev, "finished ingesting repo");
 
     Ok(rev)
 }
@@ -152,26 +154,33 @@ async fn main() -> Result<()> {
         "UPDATE repos
         SET status = 'processing'
         WHERE id in (SELECT id FROM repos
-            WHERE status = 'outdated' LIMIT 1)
+            WHERE status = 'outdated'
+            ORDER BY updated ASC
+            LIMIT 1)
         RETURNING did, since",
     )?;
-    let mut update_row_status = backfill_db.prepare("UPDATE repos SET status = ? WHERE did = ?")?;
+    let mut update_row_status = backfill_db.prepare(
+        "UPDATE repos SET status = ?, updated = unixepoch('now', 'subsec') WHERE did = ?",
+    )?;
     let mut update_since = backfill_db.prepare("UPDATE repos SET since = ? WHERE did = ?")?;
 
     // TODO: parallelize (low key we can do as many concurrent requests as there are PDSes)
     loop {
-        let (did_id, since) = query_for_row.query_row((), |row| {
-            Ok((row.get::<_, u64>(0)?, row.get::<_, Option<String>>(1)?))
+        let (did, since) = query_for_row.query_row((), |row| {
+            Ok((
+                row.get(0).map(convert_did_from_db)?,
+                row.get::<_, Option<String>>(1)?,
+            ))
         })?;
         let mut storage = LiveWriteHandle::latest(&app)?;
-        match handle_queue_entry(&mut app, &mut storage, did_id, since).await {
+        match handle_queue_entry(&mut app, &mut storage, did, since).await {
             Ok(rev) => {
-                update_row_status.execute(("done", did_id))?;
-                update_since.execute((rev, did_id))?;
+                update_row_status.execute(("done", convert_did_to_db(did)))?;
+                update_since.execute((rev, convert_did_to_db(did)))?;
             }
             Err(err) => {
                 tracing::warn!(?err, "an error occurred while backfilling a repo");
-                update_row_status.execute(("errored", did_id))?;
+                update_row_status.execute(("errored", did))?;
             }
         }
     }
