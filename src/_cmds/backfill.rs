@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use backshots::{
     backfill::{
@@ -43,12 +45,20 @@ async fn main() -> Result<()> {
 
     // TODO: parallelize (low key we can do as many concurrent requests as there are PDSes)
     loop {
-        let (did, rev) = query_for_row.query_row((), |row| {
+        let row_result = query_for_row.query_row((), |row| {
             Ok((
                 row.get(0).map(convert_did_from_db)?,
                 row.get::<_, Option<String>>(1)?,
             ))
-        })?;
+        });
+        let (did, rev) = match row_result {
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                tokio::time::sleep(Duration::from_millis(1_000)).await;
+                continue;
+            }
+            r => r,
+        }?;
+
         let mut storage = LiveWriteHandle::latest(&app)?;
         match fetch_and_ingest_repo(&mut app, &mut storage, did, rev).await {
             Ok(rev) => {
