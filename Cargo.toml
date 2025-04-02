@@ -42,10 +42,6 @@ name = "test-ingest"
 path = "src/_cmds/test_ingest/main.rs"
 
 [[bin]]
-name = "repo-ingest"
-path = "src/_cmds/repo_ingest.rs"
-
-[[bin]]
 name = "growth-rate-counter"
 path = "src/_cmds/growth_rate_counter.rs"
 
