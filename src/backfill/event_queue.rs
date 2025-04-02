@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::{
     car::read_car_v1,
-    firehose::{handle_commit, subscribe_repos::SubscribeReposCommit},
+    firehose::{ingest_commit, subscribe_repos::SubscribeReposCommit},
     mst::SignedCommitNode,
     storage::live::LiveStorageWriter,
     AppContext,
@@ -46,7 +46,7 @@ pub fn flush_event_queue(
             continue;
         }
 
-        if let Err(e) = handle_commit(
+        if let Err(e) = ingest_commit(
             app,
             storage,
             commit.repo,

@@ -106,7 +106,7 @@ pub async fn ingest_firehose(
     Ok(())
 }
 
-pub fn handle_commit<R: Read + Seek>(
+pub fn ingest_commit<R: Read + Seek>(
     app: &mut AppContext,
     storage: &mut LiveStorageWriter,
     repo: String,
@@ -172,7 +172,7 @@ fn handle_event(
             let reader = &mut cursor;
             let car_file = read_car_v1(reader)?;
 
-            if let Err(e) = handle_commit(
+            if let Err(e) = ingest_commit(
                 app,
                 storage,
                 commit.repo,
