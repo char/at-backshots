@@ -84,7 +84,7 @@ fn get_pds_endpoint(did_doc: &JsonValue) -> Result<&str> {
     Ok(service_endpoint)
 }
 
-pub async fn handle_queue_entry(
+pub async fn fetch_and_ingest_repo(
     app: &mut AppContext,
     storage: &mut LiveStorageWriter,
     did: u64,

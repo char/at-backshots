@@ -2,7 +2,7 @@ use anyhow::Result;
 use backshots::{
     backfill::{
         db::{convert_did_from_db, convert_did_to_db, open_backfill_db},
-        queue::handle_queue_entry,
+        repo::fetch_and_ingest_repo,
     },
     get_app_config,
     storage::live_guards::LiveWriteHandle,
@@ -25,12 +25,6 @@ async fn main() -> Result<()> {
     let mut app = AppContext::new(&cfg)?;
 
     let backfill_db = open_backfill_db(&cfg)?;
-
-    /* let mut create_outdated =
-        backfill_db.prepare("INSERT OR IGNORE INTO repos (did) VALUES (?)")?;
-    for zplc in 1..=1_000 {
-        let _ = create_outdated.execute([zplc])?;
-    } */
 
     let mut query_for_row = backfill_db.prepare(
         "UPDATE repos
@@ -55,7 +49,7 @@ async fn main() -> Result<()> {
             ))
         })?;
         let mut storage = LiveWriteHandle::latest(&app)?;
-        match handle_queue_entry(&mut app, &mut storage, did, since).await {
+        match fetch_and_ingest_repo(&mut app, &mut storage, did, since).await {
             Ok(rev) => {
                 // TODO: flush event queue
 
