@@ -9,6 +9,7 @@ use zplc_client::ZplcDirectResolver;
 pub mod car;
 pub mod mst;
 
+pub mod backfill;
 pub mod counter;
 pub mod data;
 pub mod db;
@@ -39,6 +40,7 @@ pub struct AppContext {
     pub db_path: PathBuf,
     pub db: DbConnection,
     pub caches: DbCaches,
+    pub backfill_db: Option<rusqlite::Connection>,
 
     pub zplc_direct_resolver: ZplcDirectResolver,
     pub backlinks_counter: MonotonicCounter,
@@ -58,6 +60,7 @@ impl AppContext {
             db_path,
             db,
             caches: DbCaches::default(),
+            backfill_db: None,
 
             zplc_direct_resolver: ZplcDirectResolver {
                 conn: rusqlite::Connection::open(cfg.zplc_path.clone())?,

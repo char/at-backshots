@@ -1,9 +1,10 @@
 use anyhow::Result;
-use backshots::{
+use rusqlite::{fallible_iterator::FallibleIterator, Batch, Connection};
+
+use crate::{
     data::did::{DID_FLAG_NON_STANDARD, DID_MASK},
     AppConfig,
 };
-use rusqlite::{fallible_iterator::FallibleIterator, Batch, Connection};
 
 pub fn open_backfill_db(cfg: &AppConfig) -> Result<Connection> {
     let backfill_db = Connection::open(cfg.data_dir.join("backfill.db"))?;
