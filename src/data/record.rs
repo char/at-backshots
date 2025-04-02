@@ -132,7 +132,7 @@ pub fn resolve_collection(app: &AppContext, coll: RecordCollection) -> Result<St
 
 #[derive(Clone, Copy, IntoBytes, FromBytes, Immutable)]
 #[repr(transparent)]
-pub struct RecordIdFlags(u32);
+pub struct RecordIdFlags(pub u32);
 impl PartialEq for RecordIdFlags {
     fn eq(&self, _other: &Self) -> bool {
         true
