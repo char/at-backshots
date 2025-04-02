@@ -51,7 +51,7 @@ pub fn encode_did(app: &mut AppContext, did: &str) -> Result<u64> {
         None => {
             app.db
                 .execute("INSERT OR IGNORE INTO outline_dids (did) VALUES (?)", [did])?;
-            app.db.last_insert_rowid() as u64
+            (app.db.last_insert_rowid() as u64) | DID_FLAG_NON_STANDARD
         }
     };
     app.caches.did.insert(did.into(), id);
