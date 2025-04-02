@@ -6,6 +6,7 @@ pub type DbConnection = rusqlite::Connection;
 
 pub fn setup_db(db: &DbConnection) -> Result<()> {
     db.pragma_update(None, "journal_mode", "WAL")?;
+    db.pragma_update(None, "synchronous", "normal")?;
     let mut batch = rusqlite::Batch::new(db, include_str!("./db_schema.sql"));
     while let Some(mut stmt) = rusqlite::fallible_iterator::FallibleIterator::next(&mut batch)? {
         stmt.execute(())?;

@@ -8,6 +8,8 @@ use crate::{
 
 pub fn open_backfill_db(cfg: &AppConfig) -> Result<Connection> {
     let backfill_db = Connection::open(cfg.data_dir.join("backfill.db"))?;
+    backfill_db.pragma_update(None, "journal_mode", "WAL")?;
+    backfill_db.pragma_update(None, "synchronous", "normal")?;
     let mut batch = Batch::new(&backfill_db, include_str!("./backfill_schema.sql"));
     while let Some(mut stmt) = batch.next()? {
         stmt.execute(())?;
