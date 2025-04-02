@@ -194,7 +194,7 @@ fn handle_event(
                     }?
                 };
                 match repo_status.as_str() {
-                    "outdated" => {
+                    "outdated" | "errored" => {
                         // drop events until we're processing
                         return Ok(());
                     }
