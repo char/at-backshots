@@ -31,32 +31,32 @@ zerocopy = { version = "0.8.23", features = ["derive", "std"] }
 
 [[bin]]
 name = "api"
-path = "src/cmds/api.rs"
+path = "src/_cmds/api.rs"
 
 [[bin]]
 name = "firehose-ingest"
-path = "src/cmds/firehose_ingest.rs"
+path = "src/_cmds/firehose_ingest.rs"
 
 [[bin]]
 name = "test-ingest"
-path = "src/cmds/test_ingest/main.rs"
+path = "src/_cmds/test_ingest/main.rs"
 
 [[bin]]
 name = "repo-ingest"
-path = "src/cmds/repo_ingest.rs"
+path = "src/_cmds/repo_ingest.rs"
 
 [[bin]]
 name = "growth-rate-counter"
-path = "src/cmds/growth_rate_counter.rs"
+path = "src/_cmds/growth_rate_counter.rs"
 
 [[bin]]
 name = "live-rollover"
-path = "src/cmds/live_rollover.rs"
+path = "src/_cmds/live_rollover.rs"
 
 [[bin]]
 name = "compaction"
-path = "src/cmds/compaction.rs"
+path = "src/_cmds/compaction.rs"
 
 [[bin]]
 name = "backfill"
-path = "src/cmds/backfill.rs"
+path = "src/_cmds/backfill.rs"
