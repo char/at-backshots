@@ -124,9 +124,7 @@ pub async fn handle_queue_entry(
     let mut repo_cursor = std::io::Cursor::new(&mut repo);
     let rev = ingest_repo_archive(app, storage, did_string.clone(), &mut repo_cursor)?;
 
-    // TODO: flush event queue
-
-    tracing::info!(did = %did_string, %rev, "finished ingesting repo");
+    tracing::info!(did = %did_string, %rev, "finished repo car ingest");
 
     Ok(rev)
 }

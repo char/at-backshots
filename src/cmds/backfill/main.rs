@@ -57,10 +57,14 @@ async fn main() -> Result<()> {
         let mut storage = LiveWriteHandle::latest(&app)?;
         match handle_queue_entry(&mut app, &mut storage, did, since).await {
             Ok(rev) => {
+                // TODO: flush event queue
+
                 update_row_status.execute(("done", convert_did_to_db(did)))?;
                 update_since.execute((rev, convert_did_to_db(did)))?;
             }
             Err(err) => {
+                // TODO: clear event queue
+
                 tracing::warn!(?err, "an error occurred while backfilling a repo");
                 update_row_status.execute(("errored", did))?;
             }
