@@ -64,16 +64,7 @@ async fn get_did_document(did: &str) -> Result<JsonValue> {
     Ok(did_doc)
 }
 
-pub async fn handle_queue_entry(
-    app: &mut AppContext,
-    storage: &mut LiveStorageWriter,
-    did: u64,
-    since: Option<String>,
-) -> Result<String> {
-    let did_string = resolve_did(app, did)?;
-    tracing::info!(did = %did_string, ?since, "ingesting repo");
-
-    let did_doc = get_did_document(&did_string).await?;
+fn get_pds_endpoint(did_doc: &JsonValue) -> Result<&str> {
     let JsonValue::Array(service) = &did_doc["service"] else {
         anyhow::bail!("did doc `service` was not array")
     };
@@ -89,6 +80,21 @@ pub async fn handle_queue_entry(
     else {
         anyhow::bail!("could not find AtprotoPersonalDataServer")
     };
+
+    Ok(service_endpoint)
+}
+
+pub async fn handle_queue_entry(
+    app: &mut AppContext,
+    storage: &mut LiveStorageWriter,
+    did: u64,
+    since: Option<String>,
+) -> Result<String> {
+    let did_string = resolve_did(app, did)?;
+    tracing::info!(did = %did_string, ?since, "ingesting repo");
+
+    let did_doc = get_did_document(&did_string).await?;
+    let service_endpoint = get_pds_endpoint(&did_doc)?;
 
     let res = {
         let mut uri = format!("{service_endpoint}/xrpc/com.atproto.sync.getRepo?did={did_string}");
