@@ -14,7 +14,7 @@ pub struct UnsignedCommitNode {
 #[derive(Debug, Deserialize)]
 pub struct SignedCommitNode {
     #[serde(flatten)]
-    pub node: UnsignedCommitNode,
+    pub data: UnsignedCommitNode,
     pub sig: Bytes,
 }
 

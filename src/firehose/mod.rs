@@ -1,4 +1,4 @@
 mod ingest;
-mod subscribe_repos;
+pub mod subscribe_repos;
 
-pub use ingest::ingest_firehose;
+pub use ingest::{handle_commit, ingest_firehose};

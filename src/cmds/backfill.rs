@@ -2,6 +2,7 @@ use anyhow::Result;
 use backshots::{
     backfill::{
         db::{convert_did_from_db, convert_did_to_db, open_backfill_db},
+        event_queue::flush_event_queue,
         repo::fetch_and_ingest_repo,
     },
     get_app_config,
@@ -51,8 +52,9 @@ async fn main() -> Result<()> {
         let mut storage = LiveWriteHandle::latest(&app)?;
         match fetch_and_ingest_repo(&mut app, &mut storage, did, since).await {
             Ok(rev) => {
-                // TODO: flush event queue
-
+                tokio::task::block_in_place(|| {
+                    flush_event_queue(&mut app, &mut storage, &backfill_db, did, &rev)
+                })?;
                 update_row_status.execute(("done", convert_did_to_db(did)))?;
                 update_since.execute((rev, convert_did_to_db(did)))?;
             }

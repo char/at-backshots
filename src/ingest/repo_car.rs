@@ -26,7 +26,7 @@ pub fn ingest_repo_archive<R: Read + Seek>(
     let commit = serde_ipld_dagcbor::from_slice::<SignedCommitNode>(&commit)?;
 
     let mut entry_queue = VecDeque::<(Cid, bool)>::new();
-    entry_queue.push_back((commit.node.data, false));
+    entry_queue.push_back((commit.data.data, false));
 
     let mut records = Vec::new();
 
@@ -63,5 +63,5 @@ pub fn ingest_repo_archive<R: Read + Seek>(
 
     handle_carslice(app, storage, repo, reader, &car, &records)?;
 
-    Ok(commit.node.rev)
+    Ok(commit.data.rev)
 }

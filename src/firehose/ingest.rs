@@ -4,15 +4,19 @@ use futures_util::StreamExt;
 use hyper::header::HeaderValue;
 use ipld_core::{cid::Cid, ipld::Ipld};
 use serde_ipld_dagcbor::DecodeError;
+use std::io::{Read, Seek};
 use std::{collections::BTreeMap, io::Cursor, time::Duration};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
+use crate::car::CarFile;
 use crate::ingest::carslice::handle_carslice;
 use crate::storage::live_guards::LiveWriteHandle;
 use crate::AppContext;
 use crate::{car::read_car_v1, storage::live::LiveStorageWriter};
 
-use super::subscribe_repos::{StreamEventHeader, SubscribeReposCommit, SubscribeReposInfo};
+use super::subscribe_repos::{
+    RepoOperation, StreamEventHeader, SubscribeReposCommit, SubscribeReposInfo,
+};
 
 pub async fn ingest_firehose(
     app: &mut AppContext,
@@ -102,6 +106,37 @@ pub async fn ingest_firehose(
     Ok(())
 }
 
+pub fn handle_commit<R: Read + Seek>(
+    app: &mut AppContext,
+    storage: &mut LiveStorageWriter,
+    repo: String,
+    reader: &mut R,
+    car_file: &CarFile,
+    operations: Vec<RepoOperation>,
+) -> Result<()> {
+    let mut records = BTreeMap::<Cid, String>::new();
+    for op in operations {
+        match op.action.as_str() {
+            "create" | "update" => {
+                let Some(cid) = op.cid else {
+                    continue;
+                };
+                records.insert(cid, op.path);
+            }
+            "delete" => {
+                // TODO: handle deletes? this would be like a full scan every time :/
+            }
+            _ => tracing::warn!("unknown op action: {}", &op.action),
+        }
+    }
+
+    if records.is_empty() {
+        return Ok(());
+    }
+
+    handle_carslice(app, storage, repo, reader, car_file, &records)
+}
+
 fn handle_event(
     app: &mut AppContext,
     storage: &mut LiveStorageWriter,
@@ -137,28 +172,15 @@ fn handle_event(
             let reader = &mut cursor;
             let car_file = read_car_v1(reader)?;
 
-            let mut records = BTreeMap::<Cid, String>::new();
-            for op in commit.operations {
-                match op.action.as_str() {
-                    "create" | "update" => {
-                        let Some(cid) = op.cid else {
-                            continue;
-                        };
-                        records.insert(cid, op.path);
-                    }
-                    "delete" => {
-                        // TODO: handle deletes? this would be like a full scan every time :/
-                    }
-                    _ => tracing::warn!("unknown op action: {}", &op.action),
-                }
-            }
-
-            if !records.is_empty() {
-                if let Err(e) =
-                    handle_carslice(app, storage, commit.repo, reader, &car_file, &records)
-                {
-                    tracing::error!("{:?}", e);
-                };
+            if let Err(e) = handle_commit(
+                app,
+                storage,
+                commit.repo,
+                reader,
+                &car_file,
+                commit.operations,
+            ) {
+                tracing::error!("{e:?}");
             }
         }
         Some("#info") => {
