@@ -59,4 +59,4 @@ path = "src/cmds/compaction.rs"
 
 [[bin]]
 name = "backfill"
-path = "src/cmds/backfill/main.rs"
+path = "src/cmds/backfill.rs"
