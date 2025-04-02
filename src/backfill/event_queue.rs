@@ -42,7 +42,7 @@ pub fn flush_event_queue(
 
         let commit_block = car_file.read_block(reader, &commit.commit)?;
         let commit_node = serde_ipld_dagcbor::from_slice::<SignedCommitNode>(&commit_block)?;
-        if commit_node.data.rev.as_str() < ingested_rev {
+        if commit_node.data.rev.as_str() <= ingested_rev {
             continue;
         }
 

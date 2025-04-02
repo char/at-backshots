@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS repos (
   -- since dids are sparse theyre a bad rowid
   id INTEGER PRIMARY KEY NOT NULL,
   did INTEGER UNIQUE NOT NULL, -- fk to zplc or db/outline_dids
-  since TEXT DEFAULT NULL,
+  rev TEXT DEFAULT NULL,
   updated REAL NOT NULL DEFAULT (unixepoch('now', 'subsec')),
   status TEXT NOT NULL DEFAULT 'outdated' -- 'outdated' | 'processing' | 'done' | 'errored'
 ) STRICT;

@@ -88,19 +88,19 @@ pub async fn fetch_and_ingest_repo(
     app: &mut AppContext,
     storage: &mut LiveStorageWriter,
     did: u64,
-    since: Option<String>,
+    rev: Option<String>,
 ) -> Result<String> {
     let did_string = resolve_did(app, did)?;
-    tracing::info!(did = %did_string, ?since, "ingesting repo");
+    tracing::info!(did = %did_string, ?rev, "ingesting repo");
 
     let did_doc = get_did_document(&did_string).await?;
     let service_endpoint = get_pds_endpoint(&did_doc)?;
 
     let res = {
         let mut uri = format!("{service_endpoint}/xrpc/com.atproto.sync.getRepo?did={did_string}");
-        if let Some(since) = since {
+        if let Some(rev) = rev {
             uri.push_str("&since=");
-            uri.push_str(&since);
+            uri.push_str(&rev);
         }
         let req = Request::builder()
             .uri(uri)

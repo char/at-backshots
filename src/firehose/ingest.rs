@@ -8,8 +8,11 @@ use std::io::{Read, Seek};
 use std::{collections::BTreeMap, io::Cursor, time::Duration};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
+use crate::backfill::db::convert_did_to_db;
 use crate::car::CarFile;
+use crate::data::did::encode_did;
 use crate::ingest::carslice::handle_carslice;
+use crate::mst::SignedCommitNode;
 use crate::storage::live_guards::LiveWriteHandle;
 use crate::AppContext;
 use crate::{car::read_car_v1, storage::live::LiveStorageWriter};
@@ -20,6 +23,7 @@ use super::subscribe_repos::{
 
 pub async fn ingest_firehose(
     app: &mut AppContext,
+    backfill_db: Option<&rusqlite::Connection>,
     domain: &str,
     port: u16,
     tls: bool,
@@ -78,7 +82,7 @@ pub async fn ingest_firehose(
                     }
 
                     tokio::task::block_in_place(|| {
-                        handle_event(app, &mut storage, bytes, &mut cursor)
+                        handle_event(app, &mut storage, backfill_db, bytes, &mut cursor)
                     })?;
                 }
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_close_frame))) => {
@@ -140,6 +144,7 @@ pub fn ingest_commit<R: Read + Seek>(
 fn handle_event(
     app: &mut AppContext,
     storage: &mut LiveStorageWriter,
+    backfill_db: Option<&rusqlite::Connection>,
     event: Bytes,
     cursor_ref: &mut u64,
 ) -> Result<()> {
@@ -168,19 +173,75 @@ fn handle_event(
                 *cursor_ref = cursor;
             }
 
-            let mut cursor = Cursor::new(commit.blocks);
-            let reader = &mut cursor;
-            let car_file = read_car_v1(reader)?;
+            if let Some(backfill_db) = backfill_db {
+                let repo = commit.repo;
+                let did_id = encode_did(app, &repo)?;
+                let repo_status: String = {
+                    let mut create_or_get_status = backfill_db.prepare_cached(
+                        "INSERT INTO repos (did, status)
+                    VALUES (?1, 'outdated')
+                    ON CONFLICT(did) DO UPDATE SET
+                        status = repos.status
+                    RETURNING status",
+                    )?;
 
-            if let Err(e) = ingest_commit(
-                app,
-                storage,
-                commit.repo,
-                reader,
-                &car_file,
-                commit.operations,
-            ) {
-                tracing::error!("{e:?}");
+                    create_or_get_status.query_row([convert_did_to_db(did_id)], |row| row.get(0))?
+                };
+                match repo_status.as_str() {
+                    "outdated" => {
+                        // drop events until we're processing
+                        return Ok(());
+                    }
+                    "processing" => {
+                        backfill_db.execute(
+                            "INSERT INTO event_queue (did, event) VALUES (?, ?)",
+                            (convert_did_to_db(did_id), payload_buf),
+                        )?;
+                    }
+                    "done" => {
+                        let mut get_last_rev =
+                            backfill_db.prepare_cached("SELECT rev FROM repos WHERE did = ?")?;
+                        let last_rev: String = get_last_rev
+                            .query_row([convert_did_to_db(did_id)], |row| row.get(0))?;
+
+                        let mut cursor = Cursor::new(commit.blocks);
+                        let reader = &mut cursor;
+                        let car_file = read_car_v1(reader)?;
+
+                        let commit_block = car_file.read_block(reader, &commit.commit)?;
+                        let commit_node =
+                            serde_ipld_dagcbor::from_slice::<SignedCommitNode>(&commit_block)?;
+                        if commit_node.data.rev.as_str() <= last_rev.as_str() {
+                            return Ok(());
+                        }
+
+                        backfill_db.execute(
+                            "UPDATE repos SET rev = ?2 WHERE did = ?1",
+                            (convert_did_to_db(did_id), commit_node.data.rev),
+                        )?;
+
+                        if let Err(e) =
+                            ingest_commit(app, storage, repo, reader, &car_file, commit.operations)
+                        {
+                            tracing::error!("{e:?}");
+                        }
+                    }
+                    _ => anyhow::bail!("unknown repo status {repo_status}"),
+                }
+            } else {
+                let mut cursor = Cursor::new(commit.blocks);
+                let reader = &mut cursor;
+                let car_file = read_car_v1(reader)?;
+                if let Err(e) = ingest_commit(
+                    app,
+                    storage,
+                    commit.repo,
+                    reader,
+                    &car_file,
+                    commit.operations,
+                ) {
+                    tracing::error!("{e:?}");
+                }
             }
         }
         Some("#info") => {

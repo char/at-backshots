@@ -34,29 +34,29 @@ async fn main() -> Result<()> {
             WHERE status = 'outdated'
             ORDER BY updated ASC
             LIMIT 1)
-        RETURNING did, since",
+        RETURNING did, rev",
     )?;
     let mut update_row_status = backfill_db.prepare(
         "UPDATE repos SET status = ?, updated = unixepoch('now', 'subsec') WHERE did = ?",
     )?;
-    let mut update_since = backfill_db.prepare("UPDATE repos SET since = ? WHERE did = ?")?;
+    let mut update_rev = backfill_db.prepare("UPDATE repos SET rev = ? WHERE did = ?")?;
 
     // TODO: parallelize (low key we can do as many concurrent requests as there are PDSes)
     loop {
-        let (did, since) = query_for_row.query_row((), |row| {
+        let (did, rev) = query_for_row.query_row((), |row| {
             Ok((
                 row.get(0).map(convert_did_from_db)?,
                 row.get::<_, Option<String>>(1)?,
             ))
         })?;
         let mut storage = LiveWriteHandle::latest(&app)?;
-        match fetch_and_ingest_repo(&mut app, &mut storage, did, since).await {
+        match fetch_and_ingest_repo(&mut app, &mut storage, did, rev).await {
             Ok(rev) => {
                 tokio::task::block_in_place(|| {
                     flush_event_queue(&mut app, &mut storage, &backfill_db, did, &rev)
                 })?;
                 update_row_status.execute(("done", convert_did_to_db(did)))?;
-                update_since.execute((rev, convert_did_to_db(did)))?;
+                update_rev.execute((rev, convert_did_to_db(did)))?;
             }
             Err(err) => {
                 // TODO: clear event queue
