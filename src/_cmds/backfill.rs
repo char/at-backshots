@@ -1,4 +1,10 @@
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use anyhow::Result;
 use backshots::{
@@ -43,9 +49,17 @@ async fn main() -> Result<()> {
     )?;
     let mut update_rev = backfill_db.prepare("UPDATE repos SET rev = ? WHERE did = ?")?;
 
-    // TODO: parallelize (low key we can do as many concurrent requests as there are PDSes)
+    let shutdown = Arc::new(AtomicBool::new(false));
+    {
+        let shutdown = Arc::clone(&shutdown);
+        tokio::spawn(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            shutdown.store(true, Ordering::Relaxed);
+        });
+    }
+
     let mut storage = LiveWriteHandle::latest(&app)?;
-    loop {
+    while !shutdown.load(Ordering::Relaxed) {
         let row_result = query_for_row.query_row((), |row| {
             Ok((
                 row.get(0).map(convert_did_from_db)?,
@@ -80,4 +94,7 @@ async fn main() -> Result<()> {
             }
         }
     }
+
+    tracing::info!("done!");
+    Ok(())
 }
