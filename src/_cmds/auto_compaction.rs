@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeSet,
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -14,12 +15,13 @@ use backshots::{
     storage::{compacted::CompactedStorageWriter, live::LiveStorageReader},
     AppConfig,
 };
-use indicatif::ProgressBar;
+use indicatif::{MultiProgress, ProgressBar};
 use nix::{libc::pid_t, sys::signal::kill};
+use tokio::task::JoinHandle;
 
-fn compact_oldest_live_store(cfg: &AppConfig, db: &DbConnection) -> Result<()> {
+fn get_candidate_live_store(cfg: &AppConfig, db: &DbConnection) -> Result<(String, PathBuf)> {
     let store: String = db.query_row(
-        "SELECT name FROM data_stores WHERE type = 'live' ORDER BY id ASC LIMIT 1",
+        "SELECT name FROM data_stores WHERE type = 'live' AND compaction_in_progress = 0 ORDER BY id ASC LIMIT 1",
         (),
         |row| row.get(0),
     )?;
@@ -58,15 +60,29 @@ fn compact_oldest_live_store(cfg: &AppConfig, db: &DbConnection) -> Result<()> {
         }
     }
 
+    db.execute(
+        "UPDATE data_stores SET compaction_in_progress = 1 WHERE name = ?",
+        [&store],
+    )?;
+
+    Ok((store, store_dir))
+}
+
+fn compact_live_store(
+    mpb: MultiProgress,
+    cfg: &AppConfig,
+    store: String,
+    store_dir: PathBuf,
+) -> Result<()> {
     let mut reader = LiveStorageReader::new(store_dir)?;
-    println!("reading index from {store}…");
+    mpb.println(format!("reading index from {store}…"))?;
     let targets = reader.list_all_targets()?;
-    println!("compacting {} targets…", targets.len());
+    mpb.println(format!("compacting {} targets…", targets.len()))?;
 
     let compacted_store_dir = cfg.data_dir.join("compacted").join(&store);
     let mut writer = CompactedStorageWriter::new(compacted_store_dir)?;
 
-    let pb = ProgressBar::new(targets.len() as u64);
+    let pb = mpb.add(ProgressBar::new(targets.len() as u64).with_message(store.clone()));
     for (target, index_entry) in targets {
         let mut sources = BTreeSet::new();
         reader.read_backlinks_from_index_entry(&index_entry, &mut sources)?;
@@ -86,7 +102,7 @@ fn compact_oldest_live_store(cfg: &AppConfig, db: &DbConnection) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cfg = get_app_config()?;
+    let cfg = Arc::new(get_app_config()?);
     let db = rusqlite::Connection::open(cfg.data_dir.join("db"))?;
     setup_db(&db)?;
 
@@ -99,17 +115,28 @@ async fn main() -> Result<()> {
         });
     }
 
+    let mut tasks = Vec::<JoinHandle<_>>::new();
+    let mpb = MultiProgress::new();
+
     while !shutdown.load(Ordering::Relaxed) {
-        match tokio::task::block_in_place(|| compact_oldest_live_store(&cfg, &db)) {
-            Ok(()) => {
-                println!("done!");
-                tokio::time::sleep(Duration::from_millis(10_000)).await;
-            }
+        let (store, store_path) = match get_candidate_live_store(&cfg, &db) {
+            Ok(details) => details,
             Err(e) => {
-                eprintln!("{e:?}");
+                mpb.println(format!("{e:?}"))?;
                 tokio::time::sleep(Duration::from_millis(1000)).await;
+                continue;
             }
-        }
+        };
+
+        let mpb = mpb.clone();
+        let cfg = Arc::clone(&cfg);
+        let join_handle =
+            tokio::task::spawn_blocking(move || compact_live_store(mpb, &cfg, store, store_path));
+        tasks.push(join_handle);
+    }
+
+    for task in tasks {
+        let _ = task.await;
     }
 
     Ok(())

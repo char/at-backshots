@@ -17,11 +17,16 @@ fn main() -> Result<()> {
     let target = if &target == "oldest" {
         let db = rusqlite::Connection::open(cfg.data_dir.join("db"))?;
         setup_db(&db)?;
-        db.query_row(
-            "SELECT name FROM data_stores WHERE type = 'live' ORDER BY id ASC LIMIT 1",
+        let target = db.query_row(
+            "SELECT name FROM data_stores WHERE type = 'live' AND compaction_in_progress = 0 ORDER BY id ASC LIMIT 1",
             (),
             |row| row.get(0),
-        )?
+        )?;
+        db.execute(
+            "UPDATE data_stores SET compaction_in_progress = 1 WHERE name = ?",
+            [&target],
+        )?;
+        target
     } else {
         target
     };

@@ -20,5 +20,6 @@ CREATE TABLE IF NOT EXISTS collections (
 CREATE TABLE IF NOT EXISTS data_stores (
   id INTEGER PRIMARY KEY,
   name TEXT UNIQUE NOT NULL,
-  type TEXT NOT NULL -- 'live' | 'compacted'
+  compaction_in_progress INT DEFAULT 0,
+  type TEXT NOT NULL -- 'live' | 'compacting' | 'compacted'
 ) STRICT;
