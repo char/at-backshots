@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use anyhow::Result;
 use backshots::{get_app_config, AppContext};
@@ -30,16 +30,29 @@ fn main() -> Result<()> {
     let mut statement = app
         .db
         .prepare("SELECT name FROM data_stores WHERE type = 'live' ORDER BY id ASC")?;
-    for store in statement
+    let stores = statement
         .query_map((), |row| row.get::<_, String>(0))?
         .filter_map(Result::ok)
-    {
-        let store_dir = cfg.data_dir.join("live").join(&store);
+        .collect::<HashSet<_>>();
+
+    let live_dir = cfg.data_dir.join("live");
+
+    for store_entry in live_dir.read_dir()?.filter_map(Result::ok) {
+        if store_entry.file_type()?.is_file() {
+            continue;
+        }
+
+        let store = store_entry.file_name();
+        if store.to_str().map(|it| stores.contains(it)).unwrap_or(true) {
+            continue;
+        }
+
+        let store_dir = live_dir.join(&store);
         if has_running_procs(&store_dir)? {
             continue;
         }
 
-        println!("cleaning up: {store}…");
+        println!("cleaning up: {}…", store.to_string_lossy());
         std::fs::remove_dir_all(store_dir)?;
     }
 
