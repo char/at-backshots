@@ -6,6 +6,7 @@ use backshots::{
     get_app_config,
     storage::{compacted::CompactedStorageWriter, live::LiveStorageReader},
 };
+use indicatif::{ProgressBar, ProgressStyle};
 
 fn main() -> Result<()> {
     let cfg = get_app_config()?;
@@ -31,11 +32,15 @@ fn main() -> Result<()> {
     println!("compacting {} targets…", targets.len());
 
     let mut writer = CompactedStorageWriter::new(cfg.data_dir.join("compacted").join(&target))?;
+
+    let pb = ProgressBar::new(targets.len() as u64);
     for (target, index_entry) in targets {
         let mut sources = BTreeSet::new();
         reader.read_backlinks_from_index_entry(&index_entry, &mut sources)?;
         writer.log_backlinks(&target, &sources)?;
+        pb.inc(1);
     }
+    pb.finish();
 
     let db = rusqlite::Connection::open(cfg.data_dir.join("db"))?;
     db.execute(
