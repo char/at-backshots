@@ -59,5 +59,13 @@ name = "backfill"
 path = "src/_cmds/backfill.rs"
 
 [[bin]]
-name = "autocompaction"
-path = "src/_cmds/autocompaction.rs"
+name = "auto-compaction"
+path = "src/_cmds/auto_compaction.rs"
+
+[[bin]]
+name = "auto-rollover"
+path = "src/_cmds/auto_rollover.rs"
+
+[[bin]]
+name = "live-cleanup"
+path = "src/_cmds/live_cleanup.rs"
