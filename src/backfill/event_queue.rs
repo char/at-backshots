@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use crate::{
     car::read_car_v1,
+    data::did::resolve_did,
     firehose::{ingest_commit, subscribe_repos::SubscribeReposCommit},
     mst::SignedCommitNode,
     storage::live::LiveStorageWriter,
@@ -56,6 +57,10 @@ pub fn flush_event_queue(
         ) {
             tracing::error!("{e:?}")
         }
+    }
+
+    if let Ok(repo) = resolve_did(app, did) {
+        tracing::info!(%repo, "finished flushing event queue");
     }
 
     Ok(())
