@@ -205,7 +205,11 @@ pub async fn main() -> anyhow::Result<()> {
         .with("api=debug,backshots=debug".parse::<EnvFilter>().unwrap())
         .init();
 
-    let addr: SocketAddr = "127.0.0.1:3000".parse()?;
+    let addr: SocketAddr = std::env::var("BIND_ADDRESS")
+        .ok()
+        .as_deref()
+        .unwrap_or("127.0.0.1:3000")
+        .parse()?;
     let cfg = Arc::new(get_app_config()?);
     println!("Listening at: http://{addr}/ ...");
     listen(cfg, addr).await?;
