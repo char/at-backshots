@@ -10,7 +10,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use crate::backfill::db::convert_did_to_db;
 use crate::car::CarFile;
-use crate::data::did::encode_did;
+use crate::data::did::{encode_did, encode_existing_did};
 use crate::ingest::carslice::handle_carslice;
 use crate::mst::SignedCommitNode;
 use crate::storage::live_guards::LiveWriteHandle;
@@ -175,7 +175,18 @@ fn handle_event(
 
             if let Some(backfill_db) = backfill_db {
                 let repo = commit.repo;
-                let did_id = encode_did(app, &repo)?;
+                let did_id = if repo.starts_with("did:plc:") {
+                    match encode_existing_did(app, &repo)? {
+                        Some(d) => d,
+                        None => {
+                            // skip super duper fresh did:plc identities that zplc doesn't know about yet
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    encode_did(app, &repo)?
+                };
+
                 let repo_status: String = {
                     /* let mut create_or_get_status = backfill_db.prepare_cached(
                         "INSERT INTO repos (did, status)
