@@ -60,6 +60,10 @@ async fn main() -> Result<()> {
 
     let mut storage = LiveWriteHandle::latest(&app)?;
     while !shutdown.load(Ordering::Relaxed) {
+        if LiveWriteHandle::latest_id(&app)? != storage.store_id {
+            storage = LiveWriteHandle::latest(&app)?;
+        }
+
         let row_result = query_for_row.query_row((), |row| {
             Ok((
                 row.get(0).map(convert_did_from_db)?,
@@ -73,10 +77,6 @@ async fn main() -> Result<()> {
             }
             r => r,
         }?;
-
-        if LiveWriteHandle::latest_id(&app)? != storage.store_id {
-            storage = LiveWriteHandle::latest(&app)?;
-        }
 
         match fetch_and_ingest_repo(&mut app, &mut storage, did, rev).await {
             Ok(rev) => {
