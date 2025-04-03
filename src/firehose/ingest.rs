@@ -188,21 +188,21 @@ fn handle_event(
                 };
 
                 let repo_status: String = {
-                    /* let mut create_or_get_status = backfill_db.prepare_cached(
+                    let mut create_or_get_status = backfill_db.prepare_cached(
                         "INSERT INTO repos (did, status)
                     VALUES (?1, 'outdated')
                     ON CONFLICT(did) DO UPDATE SET
                         status = repos.status
                     RETURNING status",
                     )?;
-                    create_or_get_status.query_row([convert_did_to_db(did_id)], |row| row.get(0))? */
+                    create_or_get_status.query_row([convert_did_to_db(did_id)], |row| row.get(0))?
 
-                    let mut get_status =
+                    /* let mut get_status =
                         backfill_db.prepare_cached("SELECT status FROM repos WHERE did = ?")?;
                     match get_status.query_row([convert_did_to_db(did_id)], |row| row.get(0)) {
                         Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(()),
                         res => res,
-                    }?
+                    }? */
                 };
                 match repo_status.as_str() {
                     "outdated" | "errored" => {

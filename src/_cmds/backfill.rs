@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
                 // TODO: clear event queue
 
                 tracing::warn!(?err, "an error occurred while backfilling a repo");
-                update_row_status.execute(("errored", did))?;
+                update_row_status.execute(("errored", convert_did_to_db(did)))?;
             }
         }
     }
