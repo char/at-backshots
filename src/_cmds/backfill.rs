@@ -44,6 +44,7 @@ async fn main() -> Result<()> {
     let mut update_rev = backfill_db.prepare("UPDATE repos SET rev = ? WHERE did = ?")?;
 
     // TODO: parallelize (low key we can do as many concurrent requests as there are PDSes)
+    let mut storage = LiveWriteHandle::latest(&app)?;
     loop {
         let row_result = query_for_row.query_row((), |row| {
             Ok((
@@ -59,7 +60,10 @@ async fn main() -> Result<()> {
             r => r,
         }?;
 
-        let mut storage = LiveWriteHandle::latest(&app)?;
+        if LiveWriteHandle::latest_id(&app)? != storage.store_id {
+            storage = LiveWriteHandle::latest(&app)?;
+        }
+
         match fetch_and_ingest_repo(&mut app, &mut storage, did, rev).await {
             Ok(rev) => {
                 tokio::task::block_in_place(|| {
