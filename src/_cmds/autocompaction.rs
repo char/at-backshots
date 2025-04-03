@@ -11,8 +11,10 @@ use anyhow::Result;
 use backshots::{
     db::{setup_db, DbConnection},
     get_app_config,
-    storage::{compacted::CompactedStorageWriter, live::LiveStorageReader},
-    AppConfig,
+    storage::{
+        compacted::CompactedStorageWriter, live::LiveStorageReader, live_guards::LiveWriteHandle,
+    },
+    AppConfig, AppContext,
 };
 use indicatif::ProgressBar;
 use nix::{libc::pid_t, sys::signal::kill};
@@ -41,6 +43,18 @@ fn compact_oldest_live_store(cfg: &AppConfig, db: &DbConnection) -> Result<()> {
     };
     if total_size < 2_147_483_648 {
         anyhow::bail!("not big enough yet ({total_size} bytes)");
+    }
+
+    {
+        let youngest_store: String = db.query_row(
+            "SELECT name FROM data_stores WHERE type = 'live' ORDER BY id DESC LIMIT 1",
+            (),
+            |row| row.get(0),
+        )?;
+        if youngest_store == store {
+            let app = AppContext::new(cfg)?;
+            LiveWriteHandle::add_new(&app)?;
+        }
     }
 
     for file in std::fs::read_dir(&store_dir)?.filter_map(Result::ok) {
