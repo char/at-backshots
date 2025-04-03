@@ -46,6 +46,7 @@ fn get_response(cfg: Arc<AppConfig>, req: Request<Incoming>) -> Result<Response<
                 .header(header::CONTENT_TYPE, "text/plain")
                 .body(body_full(format!(
                     r#"backshots running...
+
 collections: {}
 backlinks: {}
 outline rkeys: {}
