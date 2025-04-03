@@ -34,11 +34,12 @@ fn main() -> Result<()> {
         .query_map((), |row| row.get::<_, String>(0))?
         .filter_map(Result::ok)
     {
-        let store_dir = cfg.data_dir.join("live").join(store);
+        let store_dir = cfg.data_dir.join("live").join(&store);
         if has_running_procs(&store_dir)? {
             continue;
         }
 
+        println!("cleaning up: {store}…");
         std::fs::remove_dir_all(store_dir)?;
     }
 
