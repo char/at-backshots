@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 use backshots::{
+    db::setup_db,
     get_app_config,
     storage::{compacted::CompactedStorageWriter, live::LiveStorageReader},
 };
@@ -11,6 +12,18 @@ fn main() -> Result<()> {
     let target = std::env::args()
         .nth(1)
         .expect("please provide name to compress"); // todo: probably should get some real option parsing
+
+    let target = if &target == "oldest" {
+        let db = rusqlite::Connection::open(cfg.data_dir.join("db"))?;
+        setup_db(&db)?;
+        db.query_row(
+            "SELECT name FROM data_stores WHERE type = 'live' ORDER BY id ASC LIMIT 1",
+            (),
+            |row| row.get(0),
+        )?
+    } else {
+        target
+    };
 
     let mut reader = LiveStorageReader::new(cfg.data_dir.join("live").join(&target))?;
     println!("reading index…");
