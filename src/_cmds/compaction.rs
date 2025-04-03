@@ -6,7 +6,7 @@ use backshots::{
     get_app_config,
     storage::{compacted::CompactedStorageWriter, live::LiveStorageReader},
 };
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 
 fn main() -> Result<()> {
     let cfg = get_app_config()?;
@@ -27,7 +27,7 @@ fn main() -> Result<()> {
     };
 
     let mut reader = LiveStorageReader::new(cfg.data_dir.join("live").join(&target))?;
-    println!("reading index…");
+    println!("reading index from {target}…");
     let targets = reader.list_all_targets()?;
     println!("compacting {} targets…", targets.len());
 
