@@ -26,12 +26,7 @@ fn get_response(cfg: Arc<AppConfig>, req: Request<Incoming>) -> Result<Response<
     let path = req.uri().path();
 
     match (req.method(), path) {
-        (&Method::GET, "/") => Ok(Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/plain")
-            .body(body_full("backshots running..."))?),
-
-        (&Method::GET, "/status") => {
+        (&Method::GET, "/") => {
             let db = app.db;
 
             let collection_count: u64 =
@@ -50,11 +45,13 @@ fn get_response(cfg: Arc<AppConfig>, req: Request<Incoming>) -> Result<Response<
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "text/plain")
                 .body(body_full(format!(
-                    r#"status:
+                    r#"backshots running...
 collections: {}
 backlinks: {}
 outline rkeys: {}
-non-zplc dids: {}"#,
+non-zplc dids: {}
+
+the backlink listing API endpoint is located at:  GET /links?uri=<at-uri>"#,
                     collection_count, backlink_count, rkey_count, did_count,
                 )))?)
         }
