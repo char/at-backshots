@@ -81,9 +81,11 @@ pub async fn ingest_firehose(
                         }
                     }
 
-                    tokio::task::block_in_place(|| {
+                    if let Err(e) = tokio::task::block_in_place(|| {
                         handle_event(app, &mut storage, backfill_db, bytes, &mut cursor)
-                    })?;
+                    }) {
+                        tracing::error!("error while handling event: {e:?}")
+                    };
                 }
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_close_frame))) => {
                     tracing::warn!("got close frame. reconnecting in 10s");
