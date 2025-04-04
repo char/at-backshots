@@ -70,6 +70,8 @@ impl AppContext {
     }
 
     pub fn connect_to_db(&self) -> Result<DbConnection> {
-        Ok(DbConnection::open(&self.db_path)?)
+        let conn = DbConnection::open(&self.db_path)?;
+        setup_db(&conn)?;
+        Ok(conn)
     }
 }

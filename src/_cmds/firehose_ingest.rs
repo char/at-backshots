@@ -18,7 +18,15 @@ pub async fn main() -> anyhow::Result<()> {
     let mut app = AppContext::new(&cfg)?;
     let backfill_db = open_backfill_db(&cfg)?;
     let ingest = async move {
-        match ingest_firehose(&mut app, Some(&backfill_db), "bsky.network", 443, true).await {
+        match ingest_firehose(
+            &mut app,
+            None, /* Some(&backfill_db) */
+            "bsky.network",
+            443,
+            true,
+        )
+        .await
+        {
             Ok(_) => {}
             Err(e) => tracing::error!("ingest error: {:?}", e),
         }
