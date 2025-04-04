@@ -218,7 +218,7 @@ fn handle_event(
                     "done" => {
                         let mut get_last_rev =
                             backfill_db.prepare_cached("SELECT rev FROM repos WHERE did = ?")?;
-                        let last_rev: String = get_last_rev
+                        let last_rev: Option<String> = get_last_rev
                             .query_row([convert_did_to_db(did_id)], |row| row.get(0))?;
 
                         let mut cursor = Cursor::new(commit.blocks);
@@ -228,7 +228,7 @@ fn handle_event(
                         let commit_block = car_file.read_block(reader, &commit.commit)?;
                         let commit_node =
                             serde_ipld_dagcbor::from_slice::<SignedCommitNode>(&commit_block)?;
-                        if commit_node.data.rev.as_str() <= last_rev.as_str() {
+                        if commit_node.data.rev.as_str() <= last_rev.unwrap_or_default().as_str() {
                             return Ok(());
                         }
 
